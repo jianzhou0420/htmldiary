@@ -21,6 +21,7 @@ import mimetypes
 import os
 import re
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -903,6 +904,113 @@ def geo_search(q):
 
 
 # --------------------------------------------------------------------------------------
+# Git (VS Code-style source control for the data folder or the app folder)
+# --------------------------------------------------------------------------------------
+def git_root(which):
+    return ROOT if which == "app" else STORE.dir
+
+
+def git_run(args, cwd, timeout=90):
+    env = dict(os.environ)
+    env.update({"GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "GIT_PAGER": "cat", "PAGER": "cat"})
+    try:
+        p = subprocess.run(["git"] + args, cwd=cwd, capture_output=True, timeout=timeout, env=env)
+    except FileNotFoundError:
+        raise ValueError("git is not installed on this machine")
+    except subprocess.TimeoutExpired:
+        raise ValueError("git %s timed out" % args[0])
+    out = p.stdout.decode("utf-8", "replace")
+    err = p.stderr.decode("utf-8", "replace")
+    return p.returncode, out, err
+
+
+def git_ok(args, cwd, timeout=90):
+    code, out, err = git_run(args, cwd, timeout)
+    if code != 0:
+        raise ValueError((err or out or "git %s failed" % args[0]).strip()[:2000])
+    return out
+
+
+def git_is_repo(cwd):
+    code, out, _ = git_run(["rev-parse", "--show-toplevel"], cwd, 15)
+    return code == 0 and os.path.realpath(out.strip()) == os.path.realpath(cwd)
+
+
+def git_status(cwd):
+    if not git_is_repo(cwd):
+        return {"isRepo": False, "path": cwd}
+    out = git_ok(["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"], cwd, 30)
+    branch, upstream, ahead, behind, oid = "", "", 0, 0, ""
+    staged, unstaged = [], []
+    parts = out.split("\0")
+    i = 0
+    while i < len(parts):
+        line = parts[i]
+        i += 1
+        if not line:
+            continue
+        if line.startswith("# branch.head "):
+            branch = line[14:]
+        elif line.startswith("# branch.upstream "):
+            upstream = line[18:]
+        elif line.startswith("# branch.oid "):
+            oid = line[13:]
+        elif line.startswith("# branch.ab "):
+            a, b = line[12:].split()
+            ahead, behind = int(a[1:]), int(b[1:])
+        elif line[0] in "12":
+            f = line.split(" ", 8 if line[0] == "1" else 9)
+            xy = f[1]
+            path = f[-1]
+            if line[0] == "2":  # rename: "path\torig" -> next NUL part is the original path
+                orig = parts[i] if i < len(parts) else ""
+                i += 1
+                path = f[-1]
+            if xy[0] != ".":
+                staged.append({"path": path, "status": xy[0], "staged": True})
+            if xy[1] != ".":
+                unstaged.append({"path": path, "status": xy[1], "staged": False})
+        elif line[0] == "?":
+            unstaged.append({"path": line[2:], "status": "?", "staged": False})
+    remote = ""
+    code, r, _ = git_run(["remote", "get-url", "origin"], cwd, 15)
+    if code == 0:
+        remote = r.strip()
+    last = None
+    code, l, _ = git_run(["log", "-1", "--format=%h%x1f%s%x1f%aI"], cwd, 15)
+    if code == 0 and l.strip():
+        h, sub, d = (l.strip().split("\x1f") + ["", "", ""])[:3]
+        last = {"hash": h, "subject": sub, "date": d}
+    return {"isRepo": True, "path": cwd, "branch": branch, "upstream": upstream, "ahead": ahead, "behind": behind,
+            "remote": remote, "staged": staged, "unstaged": unstaged, "last": last, "oid": oid[:7]}
+
+
+def git_diff(cwd, path, staged):
+    if staged:
+        return git_ok(["diff", "--cached", "--no-color", "--", path], cwd, 30)
+    code, out, err = git_run(["diff", "--no-color", "--", path], cwd, 30)
+    if out.strip():
+        return out
+    # untracked: show as an all-added diff
+    code, out, err = git_run(["diff", "--no-color", "--no-index", "--", os.devnull, path], cwd, 30)
+    return out
+
+
+def git_log(cwd, n=60):
+    if not git_is_repo(cwd):
+        return []
+    code, out, _ = git_run(["log", "-n", str(n), "--format=%H%x1f%h%x1f%an%x1f%aI%x1f%s%x1f%D"], cwd, 30)
+    items = []
+    if code != 0:
+        return items
+    for line in out.splitlines():
+        f = line.split("\x1f")
+        if len(f) >= 5:
+            items.append({"hash": f[0], "short": f[1], "author": f[2], "date": f[3], "subject": f[4], "refs": f[5] if len(f) > 5 else ""})
+    return items
+
+
+# --------------------------------------------------------------------------------------
 # HTTP
 # --------------------------------------------------------------------------------------
 STORE = None  # type: Store
@@ -1011,7 +1119,18 @@ class Handler(BaseHTTPRequestHandler):
             "journals": STORE.journals(), "settings": STORE.settings(), "templates": STORE.templates(),
             "prompts": STORE.prompts(), "entries": STORE.all_entries(), "trash": STORE.trash(),
             "dataDir": STORE.dir, "version": STORE.version, "timezone": local_tz_name(), "now": now_iso(),
+            "git": self._git_summary(),
         })
+
+    @staticmethod
+    def _git_summary():
+        try:
+            st = git_status(STORE.dir)
+            if not st.get("isRepo"):
+                return {"isRepo": False, "changes": 0}
+            return {"isRepo": True, "changes": len(st["staged"]) + len(st["unstaged"]), "ahead": st["ahead"], "behind": st["behind"], "branch": st["branch"]}
+        except Exception:
+            return {"isRepo": False, "changes": 0, "error": True}
 
     def api_version(self, m, qs):
         STORE.scan()
@@ -1192,6 +1311,133 @@ class Handler(BaseHTTPRequestHandler):
         n = STORE.import_htmldiary_json(doc)
         self._json({"entries": n})
 
+    # ---- git ----
+    def _repo(self, qs):
+        return git_root(qs.get("repo") or "data")
+
+    def api_git_status(self, m, qs):
+        cwd = self._repo(qs)
+        st = git_status(cwd)
+        st["log"] = git_log(cwd, int(qs.get("n") or 60))
+        self._json(st)
+
+    def api_git_diff(self, m, qs):
+        cwd = self._repo(qs)
+        path = qs.get("path") or ""
+        if not path or path.startswith("/") or ".." in path.split("/"):
+            raise ValueError("bad path")
+        text = git_diff(cwd, path, qs.get("staged") == "1")
+        if len(text) > 400000:
+            text = text[:400000] + "\n… (truncated)\n"
+        self._send(200, text, "text/plain; charset=utf-8")
+
+    def api_git_show(self, m, qs):
+        cwd = self._repo(qs)
+        h = qs.get("hash") or ""
+        if not re.fullmatch(r"[0-9a-fA-F]{4,40}", h):
+            raise ValueError("bad hash")
+        text = git_ok(["show", "--no-color", "--stat", "--patch", "--format=commit %H%nAuthor: %an <%ae>%nDate:   %aI%n%n    %s%n%n%b", h], cwd, 30)
+        if len(text) > 400000:
+            text = text[:400000] + "\n… (truncated)\n"
+        self._send(200, text, "text/plain; charset=utf-8")
+
+    def _paths(self, body):
+        paths = body.get("paths") or []
+        if not isinstance(paths, list) or not paths:
+            raise ValueError("paths required")
+        for p in paths:
+            if not isinstance(p, str) or p.startswith("/") or ".." in p.split("/"):
+                raise ValueError("bad path")
+        return paths
+
+    def api_git_stage(self, m, qs):
+        cwd = self._repo(qs)
+        body = self._json_body()
+        if body.get("all"):
+            git_ok(["add", "-A"], cwd)
+        else:
+            git_ok(["add", "-A", "--"] + self._paths(body), cwd)
+        self._json({"ok": True})
+
+    def api_git_unstage(self, m, qs):
+        cwd = self._repo(qs)
+        body = self._json_body()
+        has_head = git_run(["rev-parse", "--verify", "HEAD"], cwd, 15)[0] == 0
+        if body.get("all"):
+            git_ok(["reset", "-q"] if has_head else ["rm", "--cached", "-r", "-q", "."], cwd)
+        else:
+            paths = self._paths(body)
+            git_ok((["reset", "-q", "HEAD", "--"] if has_head else ["rm", "--cached", "-r", "-q", "--"]) + paths, cwd)
+        self._json({"ok": True})
+
+    def api_git_discard(self, m, qs):
+        """Discard working-tree changes: tracked files are restored, untracked files removed. Destructive."""
+        cwd = self._repo(qs)
+        paths = self._paths(self._json_body())
+        tracked, untracked = [], []
+        code, out, _ = git_run(["ls-files", "--error-unmatch", "--"] + paths, cwd, 15)
+        known = set(git_run(["ls-files", "--"] + paths, cwd, 15)[1].splitlines())
+        for p in paths:
+            (tracked if p in known else untracked).append(p)
+        if tracked:
+            git_ok(["checkout", "--", *tracked], cwd)
+        for p in untracked:
+            full = os.path.normpath(os.path.join(cwd, p))
+            if full.startswith(os.path.realpath(cwd) if os.path.islink(cwd) else cwd) and os.path.isfile(full):
+                os.remove(full)
+        self._json({"ok": True, "restored": tracked, "removed": untracked})
+
+    def api_git_commit(self, m, qs):
+        cwd = self._repo(qs)
+        body = self._json_body()
+        msg = (body.get("message") or "").strip()
+        if not msg:
+            raise ValueError("commit message required")
+        if body.get("all"):
+            git_ok(["add", "-A"], cwd)
+        out = git_ok(["commit", "-q", "-m", msg], cwd)
+        code, h, _ = git_run(["rev-parse", "--short", "HEAD"], cwd, 15)
+        STORE.version += 1
+        self._json({"ok": True, "hash": h.strip(), "out": out})
+
+    def api_git_push(self, m, qs):
+        cwd = self._repo(qs)
+        st = git_status(cwd)
+        if not st.get("remote"):
+            raise ValueError("no remote configured")
+        args = ["push", "-q"] if st.get("upstream") else ["push", "-q", "-u", "origin", "HEAD"]
+        out = git_ok(args, cwd, 180)
+        self._json({"ok": True, "out": out})
+
+    def api_git_pull(self, m, qs):
+        cwd = self._repo(qs)
+        out = git_ok(["pull", "-q", "--ff-only"], cwd, 180)
+        STORE.scan(full=True)
+        self._json({"ok": True, "out": out})
+
+    def api_git_fetch(self, m, qs):
+        cwd = self._repo(qs)
+        out = git_ok(["fetch", "-q"], cwd, 120)
+        self._json({"ok": True, "out": out})
+
+    def api_git_init(self, m, qs):
+        cwd = self._repo(qs)
+        if git_is_repo(cwd):
+            raise ValueError("already a repository")
+        git_ok(["init", "-q"], cwd)
+        git_run(["symbolic-ref", "HEAD", "refs/heads/main"], cwd, 15)
+        self._json({"ok": True})
+
+    def api_git_remote(self, m, qs):
+        cwd = self._repo(qs)
+        url = (self._json_body().get("url") or "").strip()
+        if not url:
+            code, _, _ = git_run(["remote", "remove", "origin"], cwd, 15)
+            return self._json({"ok": True})
+        code, _, _ = git_run(["remote", "get-url", "origin"], cwd, 15)
+        git_ok(["remote", "set-url" if code == 0 else "add", "origin", url], cwd, 15)
+        self._json({"ok": True})
+
     def api_reload(self, m, qs):
         STORE.scan(full=True)
         self._json({"version": STORE.version, "entries": len(STORE.entries)})
@@ -1226,6 +1472,18 @@ ROUTES = [
     ("GET", r"/api/export\.json", Handler.api_export_json),
     ("POST", r"/api/import/dayone", Handler.api_import_dayone),
     ("POST", r"/api/import/htmldiary", Handler.api_import_htmldiary),
+    ("GET", r"/api/git/status", Handler.api_git_status),
+    ("GET", r"/api/git/diff", Handler.api_git_diff),
+    ("GET", r"/api/git/show", Handler.api_git_show),
+    ("POST", r"/api/git/stage", Handler.api_git_stage),
+    ("POST", r"/api/git/unstage", Handler.api_git_unstage),
+    ("POST", r"/api/git/discard", Handler.api_git_discard),
+    ("POST", r"/api/git/commit", Handler.api_git_commit),
+    ("POST", r"/api/git/push", Handler.api_git_push),
+    ("POST", r"/api/git/pull", Handler.api_git_pull),
+    ("POST", r"/api/git/fetch", Handler.api_git_fetch),
+    ("POST", r"/api/git/init", Handler.api_git_init),
+    ("POST", r"/api/git/remote", Handler.api_git_remote),
 ]
 
 

@@ -13,6 +13,42 @@ HOST=0.0.0.0 ./run.sh   # reachable on the LAN (no auth — use the passcode + a
 HTMLDIARY_DATA=~/journal ./run.sh   # keep the data folder elsewhere
 ```
 
+## Looks like
+
+<table>
+  <tr>
+    <td width="50%" align="center"><strong>Timeline · paper</strong></td>
+    <td width="50%" align="center"><strong>Timeline · night ink</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/timeline-light.png" alt="Timeline in the light paper theme"></td>
+    <td><img src="docs/screenshots/timeline-dark.png" alt="Timeline in the dark night-ink theme"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Source control (VS Code-style)</strong></td>
+    <td align="center"><strong>简体中文 · Chinese numerals</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/source-control.png" alt="Built-in git panel: staged and unstaged changes, diff, history"></td>
+    <td><img src="docs/screenshots/timeline-zh.png" alt="Interface in Simplified Chinese with Chinese-numeral dates"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Calendar</strong></td>
+    <td align="center"><strong>Streaks &amp; stats</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/calendar.png" alt="Calendar view"></td>
+    <td><img src="docs/screenshots/stats.png" alt="Streaks and statistics"></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/screenshots/mobile-timeline.png" width="260" alt="Phone: timeline">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-entry.png" width="260" alt="Phone: reading an entry">
+  <br><em>Phone layout — drawer sidebar, full-screen entry</em>
+</p>
+
 ## What it does
 
 | Feature | htmldiary |
@@ -38,7 +74,9 @@ HTMLDIARY_DATA=~/journal ./run.sh   # keep the data folder elsewhere
 | Languages | 16 interface languages (English, 简体中文, 繁體中文, 日本語, 한국어, Tiếng Việt, Español, Français, Deutsch, Português, Русский, Italiano, Bahasa Indonesia, ไทย, Türkçe, العربية with RTL); dates and numbers follow the language; Chinese numerals option for zh / ja; built-in templates and prompts in en / zh / ja / ko / vi |
 | Export | Zip of Markdown + media + JSON snapshot; single-entry `.md` |
 | Import | JSON exports from the Day One app (zip with photos), htmldiary backups |
-| Keyboard | ⌘N new, ⌘E edit, ⌘F search, ⌘S save, J/K move, S star, ⌘⌫ trash, 1–6 views, ? help |
+| Source control | Built-in git panel for the diary folder (or the app folder): staged / unstaged changes with diff, stage / unstage / discard, commit (⌘Enter), push / pull / fetch, history with per-commit diff, init and remote setup |
+| Phone | Responsive layout: drawer sidebar, full-screen entry, stacked source-control panel |
+| Keyboard | ⌘N new, ⌘E edit, ⌘F search, ⌘S save, J/K move, S star, ⌘⌫ trash, 1–7 views, ? help |
 
 ## Where your writing lives
 

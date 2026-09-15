@@ -122,6 +122,7 @@ const state = {
   sbOpen: false,
   lastActivity: Date.now(),
   locked: false,
+  git: { repo: 'data', st: null, sel: null, diff: '', msg: '', busy: false, remoteEdit: false },
 };
 const S = () => state.data.settings;
 const J = id => state.data.journals.find(j => j.id === id);
@@ -220,6 +221,7 @@ function renderSidebar() {
       ${item('prompts', t('dailyPrompts'), 'prompts')}
       ${item('stats', t('streaksStats'), 'stats')}
       ${item('trash', t('trash'), 'trash', '', null, d.trash.length || '')}
+      ${item('git', t('git'), 'git', '', null, d.git && d.git.changes ? `<span class="sb-badge">${d.git.changes}</span>` : (d.git && d.git.ahead ? `↑${d.git.ahead}` : ''))}
       ${tags.length ? `<div class="sb-section"><span class="caps">${t('tags')}</span></div><div class="sb-tags">${tags.map(([t, n]) => `<span class="tag-chip ${r.t === t ? 'active' : ''}" data-action="tag" data-tag="${attr(t)}">${esc(t)}<small>${n}</small></span>`).join('')}</div>` : ''}
     </div>
     <div class="sb-foot">
@@ -231,9 +233,9 @@ function renderSidebar() {
 
 function renderMain() {
   const v = state.route.view;
-  const wide = ['map', 'stats', 'settings', 'prompts', 'otd'].includes(v);
+  const wide = ['map', 'stats', 'settings', 'prompts', 'otd', 'git'].includes(v);
   if (wide) {
-    const body = { map: renderMapView, stats: renderStats, settings: renderSettings, prompts: renderPrompts, otd: renderOnThisDay }[v]();
+    const body = { map: renderMapView, stats: renderStats, settings: renderSettings, prompts: renderPrompts, otd: renderOnThisDay, git: renderGit }[v]();
     return `<div class="main wide"><div class="wide-col">${body}</div></div>`;
   }
   return `<div class="main">${renderListCol()}${renderDetailCol()}</div>`;
@@ -290,6 +292,11 @@ const LI = {
   dup: '<rect x="4" y="4" width="11" height="11" rx="1.5"/><path d="M9 20h10a1 1 0 0 0 1-1V9"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  git: '<circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-4 4.5-8 5.5-2 .5-4 1.2-4 1.3"/>',
+  push: '<path d="M12 19V6m-6 6 6-6 6 6M4 21h16"/>',
+  pull: '<path d="M12 5v13m-6-6 6 6 6-6M4 3h16"/>',
+  fetch: '<path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4"/>',
+  check: '<path d="m5 12 4 4L19 6"/>',
 };
 const li = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24">${LI[n]}</svg>`;
 function sealOf(j) { if (!j) return '?'; const t = (j.seal || '').trim(); if (t) return t.slice(0, 2); const c = (j.name || '?').trim()[0] || '?'; return /[a-z]/i.test(c) ? c.toUpperCase() : c; }
@@ -470,7 +477,7 @@ function renderDetailCol() {
     body = `<article class="prose" id="prose">${renderMarkdown(e.text)}</article>`;
     if (!isTrash) foot = `<div class="d-foot"><span class="status">${t('nWords', { n: wordCount(e.text) })} · ${e.photos.length ? t('nMedia', { n: e.photos.length }) + ' · ' : ''}${t('edited', { date: fmtShort(e.modified) })}</span></div>`;
   }
-  return `<div class="detail-col" id="detail" style="position:relative">${head}<div class="d-scroll">${meta}<div class="d-body">${body}</div></div>${foot}</div>`;
+  return `<div class="detail-col" id="detail">${head}<div class="d-scroll">${meta}<div class="d-body">${body}</div></div>${foot}</div>`;
 }
 
 function renderMarkdown(text) {
@@ -582,6 +589,91 @@ function initMap() {
   setTimeout(() => map.invalidateSize(), 50);
 }
 
+// ---------------------------------------------------------------- source control
+function renderGit() {
+  const g = state.git, st = g.st;
+  if (!st) { loadGit(); return `<div class="git-page"><div class="git-side"><div class="git-head"><h2>${t('git')}</h2></div><div class="g-empty">${t('gitBusy')}</div></div><div class="git-main"></div></div>`; }
+  const repoSeg = `<div class="seg"><button class="${g.repo === 'data' ? 'on' : ''}" data-action="git-repo" data-r="data">${t('gitDiary')}</button><button class="${g.repo === 'app' ? 'on' : ''}" data-action="git-repo" data-r="app">${t('gitApp')}</button></div>`;
+  let side, main;
+  if (!st.isRepo) {
+    side = `<div class="git-head"><h2>${t('git')}</h2>${repoSeg}</div><div class="g-empty" style="padding-top:16px">${t('gitNoRepo')}<br><code style="font-size:11px">${esc(st.path)}</code></div><div class="actions" style="padding:0 18px"><button class="btn primary" data-action="git-init">${t('gitInit')}</button></div>`;
+    main = `<div class="empty">${MOUNTAIN}</div>`;
+  } else {
+    const ab = (st.ahead || st.behind) ? `<span class="ab">${st.ahead ? `<b>↑${st.ahead}</b>` : ''} ${st.behind ? `<b>↓${st.behind}</b>` : ''}</span>` : '';
+    const row = (c) => `<div class="g-row ${g.sel && g.sel.path === c.path && g.sel.staged === c.staged ? 'sel' : ''}" data-action="git-sel" data-path="${attr(c.path)}" data-staged="${c.staged ? 1 : 0}"><span class="g-st ${c.status === '?' ? 'Q' : c.status}">${c.status === '?' ? 'U' : c.status}</span><span class="g-path" title="${attr(c.path)}"><span>${esc(c.path)}</span></span><span class="g-acts">${c.staged ? `<button data-action="git-unstage" data-path="${attr(c.path)}" title="${attr(t('gitUnstage'))}">−</button>` : `<button data-action="git-discard" data-path="${attr(c.path)}" class="danger" title="${attr(t('gitDiscard'))}">↶</button><button data-action="git-stage" data-path="${attr(c.path)}" title="${attr(t('gitStage'))}">+</button>`}</span></div>`;
+    const commits = (st.log || []).map(c => `<div class="g-commit ${g.sel && g.sel.hash === c.hash ? 'sel' : ''}" data-action="git-sel-commit" data-hash="${c.hash}"><span class="h">${c.short}</span><span class="s">${esc(c.subject)}${c.refs ? `<span class="refs">${esc(c.refs)}</span>` : ''}</span><span class="m">${esc(c.author)} · ${fmtShort(c.date)} ${fmtTime(c.date)}</span></div>`).join('');
+    side = `<div class="git-head"><h2>${t('git')}</h2>
+        <span class="git-branch" title="${attr(st.upstream || '')}">${li('git')} ${esc(st.branch || 'HEAD')} ${ab}</span>
+        <span class="git-tools">
+          <button class="icon-btn" data-action="git-refresh" title="${attr(t('gitRefresh'))}">${li('refresh')}</button>
+          <button class="icon-btn" data-action="git-fetch" title="${attr(t('gitFetch'))}">${li('fetch')}</button>
+          <button class="icon-btn" data-action="git-pull" title="${attr(t('gitPull'))}">${li('pull')}</button>
+          <button class="icon-btn ${st.ahead ? 'active' : ''}" data-action="git-push" title="${attr(t('gitPush'))}">${li('push')}</button>
+          <button class="icon-btn" data-action="git-remote-edit" title="${attr(t('gitRemote'))}">${li('settings')}</button>
+        </span><div class="git-repo-row">${repoSeg}</div></div>
+      ${g.remoteEdit || !st.remote ? `<div class="git-remote"><input type="text" id="git-remote-url" placeholder="https://github.com/you/diary.git" value="${attr(st.remote || '')}"><button class="btn small" data-action="git-remote-save">${t('gitSetRemote')}</button></div>` : ''}
+      <div class="git-commit"><textarea id="git-msg" placeholder="${attr(t('gitCommitMsg', { mod: MOD }))}">${esc(g.msg)}</textarea><button class="btn primary" data-action="git-commit" title="${MOD}+Enter">${li('check')} ${t('gitCommit')}</button></div>
+      <div class="git-scroll">
+        <div class="git-sec"><span class="caps">${t('gitStaged')}<small>${st.staged.length}</small></span>${st.staged.length ? `<button class="btn small" data-action="git-unstage-all">${t('gitUnstageAll')}</button>` : ''}</div>
+        ${st.staged.length ? st.staged.map(row).join('') : ''}
+        <div class="git-sec"><span class="caps">${t('gitChanges')}<small>${st.unstaged.length}</small></span>${st.unstaged.length ? `<button class="btn small" data-action="git-stage-all">${t('gitStageAll')}</button>` : ''}</div>
+        ${st.unstaged.length ? st.unstaged.map(row).join('') : (st.staged.length ? '' : `<div class="g-empty">${t('gitClean')}</div>`)}
+        <div class="git-sec"><span class="caps">${t('gitHistory')}<small>${(st.log || []).length}</small></span></div>
+        ${commits}
+      </div>`;
+    if (g.sel && (g.sel.path || g.sel.hash)) {
+      const head = g.sel.hash ? `<b>${esc(g.sel.hash.slice(0, 7))}</b>` : `<span class="g-st ${g.sel.status === '?' ? 'Q' : (g.sel.status || 'M')}">${g.sel.status === '?' ? 'U' : (g.sel.status || 'M')}</span><b>${esc(g.sel.path)}</b><span>${g.sel.staged ? t('gitStaged') : t('gitChanges')}</span>`;
+      main = `<div class="diff-head">${head}</div>${g.diff ? `<pre class="diff">${diffHtml(g.diff)}</pre>` : `<div class="g-empty">${g.diffLoading ? t('gitBusy') : t('gitNoDiff')}</div>`}`;
+    } else main = `<div class="empty">${MOUNTAIN}${t('gitSelectFile')}</div>`;
+  }
+  return `<div class="git-page" style="position:relative">${g.busy ? `<div class="git-busy">${t('gitBusy')}</div>` : ''}<div class="git-side">${side}</div><div class="git-main">${main}</div></div>`;
+}
+function diffHtml(text) {
+  return text.split('\n').map(l => {
+    let cls = 'dl';
+    if (l.startsWith('+++') || l.startsWith('---')) cls += ' dl-meta';
+    else if (l.startsWith('diff --git') || l.startsWith('commit ')) cls += ' dl-file';
+    else if (l.startsWith('@@')) cls += ' dl-hunk';
+    else if (l.startsWith('+')) cls += ' dl-add';
+    else if (l.startsWith('-')) cls += ' dl-del';
+    else if (/^(index |new file|deleted file|similarity|rename|Author:|Date:)/.test(l)) cls += ' dl-meta';
+    return `<span class="${cls}">${esc(l) || ' '}</span>`;
+  }).join('');
+}
+async function loadGit(keepSel = true) {
+  const g = state.git;
+  try { g.st = await api('GET', `/api/git/status?repo=${g.repo}`); }
+  catch (err) { g.st = { isRepo: false, path: '', error: err.message }; toast(err.message, 5000); }
+  if (!keepSel) { g.sel = null; g.diff = ''; }
+  if (g.sel && g.sel.path && g.st.isRepo) {
+    const still = [...g.st.staged, ...g.st.unstaged].find(c => c.path === g.sel.path && c.staged === g.sel.staged);
+    if (!still) { g.sel = null; g.diff = ''; }
+  }
+  if (state.route.view === 'git') render();
+}
+async function gitDo(fn, okMsg) {
+  const g = state.git; g.busy = true; if (state.route.view === 'git') render();
+  try { const r = await fn(); if (okMsg) toast(typeof okMsg === 'function' ? okMsg(r) : okMsg); }
+  catch (err) { toast(err.message, 6000); }
+  g.busy = false;
+  await loadGit();
+  try { const b = await api('GET', '/api/bootstrap'); state.data.git = b.git; state.data.entries = b.entries; state.data.trash = b.trash; } catch (_) {}
+  render();
+}
+async function gitSelect(path, staged) {
+  const g = state.git; const c = [...(g.st.staged || []), ...(g.st.unstaged || [])].find(x => x.path === path && x.staged === staged);
+  g.sel = { path, staged, status: c ? c.status : 'M' }; g.diff = ''; g.diffLoading = true; render();
+  try { g.diff = await api('GET', `/api/git/diff?repo=${g.repo}&path=${encodeURIComponent(path)}&staged=${staged ? 1 : 0}`); } catch (err) { g.diff = ''; toast(err.message, 5000); }
+  g.diffLoading = false; if (state.route.view === 'git') render();
+}
+async function gitCommit() {
+  const g = state.git; const ta = $('#git-msg'); const msg = (ta ? ta.value : g.msg).trim();
+  if (!msg) { ta && ta.focus(); return; }
+  let all = false;
+  if (!g.st.staged.length) { if (!g.st.unstaged.length) return toast(t('gitClean')); if (!await confirmModal(t('gitCommit'), t('gitNothingStaged'), t('gitCommit'), false)) return; all = true; }
+  await gitDo(async () => { const r = await api('POST', `/api/git/commit?repo=${g.repo}`, { message: msg, all }); g.msg = ''; return r; }, r => t('gitCommitted', { hash: r.hash }));
+}
+
 function renderSettings() {
   const s = S(), d = state.data;
   const seg = (key, opts) => `<div class="seg">${opts.map(([v, l]) => `<button class="${s[key] === v ? 'on' : ''}" data-action="set" data-k="${key}" data-v="${attr(v)}">${l}</button>`).join('')}</div>`;
@@ -651,6 +743,7 @@ function afterRender() {
   if (prose) prose.addEventListener('change', ev => { const cb = ev.target.closest('input[data-task]'); if (cb) toggleTask(+cb.dataset.task, cb.checked); });
   if (state.route.view === 'map') initMap(); else if (state.map) { try { state.map.remove(); } catch (_) {} state.map = null; }
   if (state.route.view === 'settings') wireSettings();
+  const gm = $('#git-msg'); if (gm) { gm.addEventListener('input', () => { state.git.msg = gm.value; }); gm.addEventListener('keydown', ev => { if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') { ev.preventDefault(); gitCommit(); } }); }
   const sel = $('.entry-card.selected'); if (sel && state.scrollToSel) { sel.scrollIntoView({ block: 'nearest' }); state.scrollToSel = false; }
   applyTheme();
 }
@@ -1123,6 +1216,22 @@ const actions = {
   'load-prompts': async () => { const c = LOCAL_CONTENT[LANG]; if (!c) return; if (!await confirmModal(t('loadBuiltinPrompts'), t('replaceListConfirm', { what: t('prompts'), lang: langName() }), t('replace'), false)) return; state.data.prompts = await api('PUT', '/api/prompts', c.prompts.slice()); toast(t('promptsSaved')); render(); },
   'import-dayone'() { $('#file-import-dayone').click(); }, 'import-htmldiary'() { $('#file-import-htmldiary').click(); },
   reload() { reloadAll().then(() => toast(t('rescanned'))); },
+  'git-repo'(el) { state.git.repo = el.dataset.r; state.git.st = null; state.git.sel = null; state.git.diff = ''; render(); },
+  'git-refresh'() { loadGit(); },
+  'git-sel'(el) { gitSelect(el.dataset.path, el.dataset.staged === '1'); },
+  'git-sel-commit': async el => { const g = state.git; g.sel = { hash: el.dataset.hash }; g.diff = ''; g.diffLoading = true; render(); try { g.diff = await api('GET', `/api/git/show?repo=${g.repo}&hash=${el.dataset.hash}`); } catch (err) { toast(err.message, 5000); } g.diffLoading = false; render(); },
+  'git-stage'(el, ev) { ev.stopPropagation(); gitDo(() => api('POST', `/api/git/stage?repo=${state.git.repo}`, { paths: [el.dataset.path] })); },
+  'git-unstage'(el, ev) { ev.stopPropagation(); gitDo(() => api('POST', `/api/git/unstage?repo=${state.git.repo}`, { paths: [el.dataset.path] })); },
+  'git-stage-all'() { gitDo(() => api('POST', `/api/git/stage?repo=${state.git.repo}`, { all: true })); },
+  'git-unstage-all'() { gitDo(() => api('POST', `/api/git/unstage?repo=${state.git.repo}`, { all: true })); },
+  'git-discard': async (el, ev) => { ev.stopPropagation(); const p = el.dataset.path; if (!await confirmModal(t('gitDiscard'), t('gitDiscardConfirm', { path: p }), t('gitDiscard'))) return; gitDo(() => api('POST', `/api/git/discard?repo=${state.git.repo}`, { paths: [p] })); },
+  'git-commit'() { gitCommit(); },
+  'git-push'() { if (!state.git.st.remote) return toast(t('gitNoRemote')); gitDo(() => api('POST', `/api/git/push?repo=${state.git.repo}`), t('gitPushed')); },
+  'git-pull'() { if (!state.git.st.remote) return toast(t('gitNoRemote')); gitDo(() => api('POST', `/api/git/pull?repo=${state.git.repo}`), t('gitPulled')); },
+  'git-fetch'() { if (!state.git.st.remote) return toast(t('gitNoRemote')); gitDo(() => api('POST', `/api/git/fetch?repo=${state.git.repo}`), t('gitFetched')); },
+  'git-init'() { gitDo(() => api('POST', `/api/git/init?repo=${state.git.repo}`)); },
+  'git-remote-edit'() { state.git.remoteEdit = !state.git.remoteEdit; render(); },
+  'git-remote-save'() { const url = $('#git-remote-url').value.trim(); state.git.remoteEdit = false; gitDo(() => api('POST', `/api/git/remote?repo=${state.git.repo}`, { url })); },
   help() { const K = k => `<span class="kbd">${k}</span>`; modal(`<h3>${t('keyboardShortcuts')}</h3><div class="sc">
     <span>${t('scNewEntry')}</span><span>${K(MOD)} ${K('N')}</span>
     <span>${t('scEdit')}</span><span>${K(MOD)} ${K('E')}</span>
@@ -1171,7 +1280,7 @@ document.addEventListener('keydown', ev => {
   }
   if (ev.key === 's' && currentEntry()) return actions.star();
   if (ev.key === 'e' && currentEntry()) return toggleEdit(true);
-  const views = { 1: 'timeline', 2: 'calendar', 3: 'media', 4: 'map', 5: 'otd', 6: 'stats' };
+  const views = { 1: 'timeline', 2: 'calendar', 3: 'media', 4: 'map', 5: 'otd', 6: 'stats', 7: 'git' };
   if (views[ev.key]) go({ view: views[ev.key], d: views[ev.key] === 'calendar' ? (state.route.d || todayStr()) : null });
 });
 window.addEventListener('beforeunload', ev => { if (state.pending.size) { flushSaves(); ev.preventDefault(); ev.returnValue = ''; } });

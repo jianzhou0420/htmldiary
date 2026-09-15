@@ -69,6 +69,7 @@ I18N.en = {
   keyboardShortcuts: 'Keyboard shortcuts', scNewEntry: 'New entry', scEdit: 'Edit / Done', scSearch: 'Search', scSave: 'Save now', scBoldItalic: 'Bold / Italic (in editor)',
   scNav: 'Next / previous entry', scFavorite: 'Favorite', scTrash: 'Move to Trash', scEscape: 'Leave editor / close', scViews: 'Views', scViewsList: 'timeline · calendar · media · map · on this day · stats', scHelp: 'This help',
   or: 'or',
+  git: 'Source Control', gitDiary: 'Diary (data)', gitApp: 'App code', gitNoRepo: 'This folder is not a git repository yet.', gitInit: 'Initialize repository', gitRemote: 'Remote', gitSetRemote: 'Set remote URL', gitStaged: 'Staged Changes', gitChanges: 'Changes', gitClean: 'Working tree clean', gitStage: 'Stage', gitUnstage: 'Unstage', gitStageAll: 'Stage all', gitUnstageAll: 'Unstage all', gitDiscard: 'Discard changes', gitDiscardConfirm: 'Discard changes to {path}? Untracked files are deleted. This cannot be undone.', gitCommitMsg: 'Message ({mod}+Enter to commit)', gitCommit: 'Commit', gitNothingStaged: 'Nothing is staged. Stage all changes and commit?', gitPush: 'Push', gitPull: 'Pull', gitFetch: 'Fetch', gitRefresh: 'Refresh', gitHistory: 'History', gitAhead: '{n} ahead', gitBehind: '{n} behind', gitPushed: 'Pushed', gitPulled: 'Pulled', gitFetched: 'Fetched', gitCommitted: 'Committed {hash}', gitSelectFile: 'Select a change or a commit to see its diff', gitNoDiff: 'Nothing to show', gitNoRemote: 'No remote configured', gitBusy: 'Working…',
 };
 
 I18N['zh-CN'] = {
@@ -132,6 +133,7 @@ I18N['zh-CN'] = {
   keyboardShortcuts: '键盘快捷键', scNewEntry: '新建日记', scEdit: '编辑 / 完成', scSearch: '搜索', scSave: '立即保存', scBoldItalic: '粗体 / 斜体（编辑时）',
   scNav: '下一篇 / 上一篇', scFavorite: '收藏', scTrash: '移到回收站', scEscape: '退出编辑 / 关闭', scViews: '视图', scViewsList: '时间线 · 日历 · 媒体 · 地图 · 历史上的今天 · 统计', scHelp: '本帮助',
   or: '或',
+  git: '源代码管理', gitDiary: '日记数据（data）', gitApp: '应用代码', gitNoRepo: '这个文件夹还不是 git 仓库。', gitInit: '初始化仓库', gitRemote: '远程', gitSetRemote: '设置远程地址', gitStaged: '已暂存的更改', gitChanges: '更改', gitClean: '工作区干净', gitStage: '暂存', gitUnstage: '取消暂存', gitStageAll: '全部暂存', gitUnstageAll: '全部取消暂存', gitDiscard: '放弃更改', gitDiscardConfirm: '放弃对 {path} 的更改？未跟踪的文件会被删除，此操作不可撤销。', gitCommitMsg: '提交信息（{mod}+Enter 提交）', gitCommit: '提交', gitNothingStaged: '没有已暂存的更改。暂存全部更改并提交？', gitPush: '推送', gitPull: '拉取', gitFetch: '获取', gitRefresh: '刷新', gitHistory: '历史', gitAhead: '领先 {n}', gitBehind: '落后 {n}', gitPushed: '已推送', gitPulled: '已拉取', gitFetched: '已获取', gitCommitted: '已提交 {hash}', gitSelectFile: '选择一个更改或提交查看差异', gitNoDiff: '没有可显示的内容', gitNoRemote: '未配置远程仓库', gitBusy: '处理中…',
 };
 
 I18N['zh-TW'] = {
@@ -195,6 +197,7 @@ I18N['zh-TW'] = {
   keyboardShortcuts: '鍵盤快速鍵', scNewEntry: '新增日記', scEdit: '編輯 / 完成', scSearch: '搜尋', scSave: '立即儲存', scBoldItalic: '粗體 / 斜體（編輯時）',
   scNav: '下一篇 / 上一篇', scFavorite: '收藏', scTrash: '移到垃圾桶', scEscape: '離開編輯 / 關閉', scViews: '檢視', scViewsList: '時間軸 · 日曆 · 媒體 · 地圖 · 歷史上的今天 · 統計', scHelp: '本說明',
   or: '或',
+  git: '原始碼控制', gitDiary: '日記資料（data）', gitApp: '應用程式碼', gitNoRepo: '這個資料夾還不是 git 儲存庫。', gitInit: '初始化儲存庫', gitRemote: '遠端', gitSetRemote: '設定遠端網址', gitStaged: '已暫存的變更', gitChanges: '變更', gitClean: '工作目錄乾淨', gitStage: '暫存', gitUnstage: '取消暫存', gitStageAll: '全部暫存', gitUnstageAll: '全部取消暫存', gitDiscard: '捨棄變更', gitDiscardConfirm: '捨棄對 {path} 的變更？未追蹤的檔案會被刪除，此操作無法復原。', gitCommitMsg: '提交訊息（{mod}+Enter 提交）', gitCommit: '提交', gitNothingStaged: '沒有已暫存的變更。暫存全部變更並提交？', gitPush: '推送', gitPull: '拉取', gitFetch: '擷取', gitRefresh: '重新整理', gitHistory: '歷史', gitAhead: '領先 {n}', gitBehind: '落後 {n}', gitPushed: '已推送', gitPulled: '已拉取', gitFetched: '已擷取', gitCommitted: '已提交 {hash}', gitSelectFile: '選擇一個變更或提交以查看差異', gitNoDiff: '沒有可顯示的內容', gitNoRemote: '未設定遠端儲存庫', gitBusy: '處理中…',
 };
 
 I18N.ja = {
@@ -258,6 +261,7 @@ I18N.ja = {
   keyboardShortcuts: 'キーボードショートカット', scNewEntry: '新規日記', scEdit: '編集 / 完了', scSearch: '検索', scSave: '今すぐ保存', scBoldItalic: '太字 / 斜体（編集中）',
   scNav: '次 / 前の日記', scFavorite: 'お気に入り', scTrash: 'ゴミ箱へ移動', scEscape: '編集を抜ける / 閉じる', scViews: '表示', scViewsList: 'タイムライン · カレンダー · メディア · 地図 · 過去の今日 · 統計', scHelp: 'このヘルプ',
   or: 'または',
+  git: 'ソース管理', gitDiary: '日記データ（data）', gitApp: 'アプリのコード', gitNoRepo: 'このフォルダーはまだ git リポジトリではありません。', gitInit: 'リポジトリを初期化', gitRemote: 'リモート', gitSetRemote: 'リモート URL を設定', gitStaged: 'ステージ済みの変更', gitChanges: '変更', gitClean: '作業ツリーはクリーンです', gitStage: 'ステージ', gitUnstage: 'ステージ解除', gitStageAll: 'すべてステージ', gitUnstageAll: 'すべてステージ解除', gitDiscard: '変更を破棄', gitDiscardConfirm: '{path} の変更を破棄しますか？未追跡ファイルは削除されます。元に戻せません。', gitCommitMsg: 'メッセージ（{mod}+Enter でコミット）', gitCommit: 'コミット', gitNothingStaged: 'ステージされた変更がありません。すべてステージしてコミットしますか？', gitPush: 'プッシュ', gitPull: 'プル', gitFetch: 'フェッチ', gitRefresh: '更新', gitHistory: '履歴', gitAhead: '{n} 先行', gitBehind: '{n} 遅れ', gitPushed: 'プッシュしました', gitPulled: 'プルしました', gitFetched: 'フェッチしました', gitCommitted: '{hash} をコミットしました', gitSelectFile: '変更またはコミットを選ぶと差分が表示されます', gitNoDiff: '表示するものがありません', gitNoRemote: 'リモートが設定されていません', gitBusy: '処理中…',
 };
 
 I18N.ko = {
@@ -321,6 +325,7 @@ I18N.ko = {
   keyboardShortcuts: '키보드 단축키', scNewEntry: '새 일기', scEdit: '편집 / 완료', scSearch: '검색', scSave: '지금 저장', scBoldItalic: '굵게 / 기울임 (편집 중)',
   scNav: '다음 / 이전 일기', scFavorite: '즐겨찾기', scTrash: '휴지통으로 이동', scEscape: '편집 종료 / 닫기', scViews: '보기', scViewsList: '타임라인 · 달력 · 미디어 · 지도 · 그날의 오늘 · 통계', scHelp: '이 도움말',
   or: '또는',
+  git: '소스 제어', gitDiary: '일기 데이터 (data)', gitApp: '앱 코드', gitNoRepo: '이 폴더는 아직 git 저장소가 아닙니다.', gitInit: '저장소 초기화', gitRemote: '원격', gitSetRemote: '원격 URL 설정', gitStaged: '스테이징된 변경 사항', gitChanges: '변경 사항', gitClean: '작업 트리가 깨끗합니다', gitStage: '스테이지', gitUnstage: '스테이지 해제', gitStageAll: '모두 스테이지', gitUnstageAll: '모두 스테이지 해제', gitDiscard: '변경 사항 취소', gitDiscardConfirm: '{path}의 변경 사항을 취소할까요? 추적되지 않는 파일은 삭제됩니다. 되돌릴 수 없습니다.', gitCommitMsg: '메시지 ({mod}+Enter로 커밋)', gitCommit: '커밋', gitNothingStaged: '스테이징된 변경 사항이 없습니다. 모두 스테이지하고 커밋할까요?', gitPush: '푸시', gitPull: '풀', gitFetch: '가져오기', gitRefresh: '새로 고침', gitHistory: '기록', gitAhead: '{n} 앞섬', gitBehind: '{n} 뒤처짐', gitPushed: '푸시했습니다', gitPulled: '풀했습니다', gitFetched: '가져왔습니다', gitCommitted: '{hash} 커밋됨', gitSelectFile: '변경 사항이나 커밋을 선택하면 차이를 볼 수 있습니다', gitNoDiff: '표시할 내용이 없습니다', gitNoRemote: '원격이 설정되지 않았습니다', gitBusy: '작업 중…',
 };
 
 I18N.vi = {
@@ -384,4 +389,5 @@ I18N.vi = {
   keyboardShortcuts: 'Phím tắt', scNewEntry: 'Bài viết mới', scEdit: 'Sửa / Xong', scSearch: 'Tìm kiếm', scSave: 'Lưu ngay', scBoldItalic: 'Đậm / Nghiêng (khi soạn)',
   scNav: 'Bài tiếp / trước', scFavorite: 'Yêu thích', scTrash: 'Chuyển vào thùng rác', scEscape: 'Thoát soạn thảo / đóng', scViews: 'Chế độ xem', scViewsList: 'dòng thời gian · lịch · ảnh & video · bản đồ · ngày này năm xưa · thống kê', scHelp: 'Trợ giúp này',
   or: 'hoặc',
+  git: 'Quản lý mã nguồn', gitDiary: 'Dữ liệu nhật ký (data)', gitApp: 'Mã ứng dụng', gitNoRepo: 'Thư mục này chưa phải là kho git.', gitInit: 'Khởi tạo kho', gitRemote: 'Remote', gitSetRemote: 'Đặt URL remote', gitStaged: 'Thay đổi đã staged', gitChanges: 'Thay đổi', gitClean: 'Cây làm việc sạch', gitStage: 'Stage', gitUnstage: 'Bỏ stage', gitStageAll: 'Stage tất cả', gitUnstageAll: 'Bỏ stage tất cả', gitDiscard: 'Hủy thay đổi', gitDiscardConfirm: 'Hủy thay đổi của {path}? Tệp chưa theo dõi sẽ bị xóa. Không thể hoàn tác.', gitCommitMsg: 'Thông điệp ({mod}+Enter để commit)', gitCommit: 'Commit', gitNothingStaged: 'Chưa stage gì cả. Stage tất cả rồi commit?', gitPush: 'Push', gitPull: 'Pull', gitFetch: 'Fetch', gitRefresh: 'Làm mới', gitHistory: 'Lịch sử', gitAhead: 'Trước {n}', gitBehind: 'Sau {n}', gitPushed: 'Đã push', gitPulled: 'Đã pull', gitFetched: 'Đã fetch', gitCommitted: 'Đã commit {hash}', gitSelectFile: 'Chọn một thay đổi hoặc commit để xem diff', gitNoDiff: 'Không có gì để hiển thị', gitNoRemote: 'Chưa cấu hình remote', gitBusy: 'Đang xử lý…',
 };
