@@ -39,11 +39,38 @@ function toIso(d) { // Date -> ISO with the browser's current UTC offset
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}${sign}${pad2(Math.floor(a / 60))}:${pad2(a % 60)}`;
 }
 function nowIso() { return toIso(new Date()); }
-function fmtMonthYear(ym) { const [y, m] = ym.split('-').map(Number); return `${MONTHS[m - 1]} ${y}`; }
-function fmtLong(iso) { const d = localDate(iso); return `${DOWS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; }
-function fmtShort(iso) { const d = localDate(iso); return `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`; }
-function fmtTime(iso) { const [h, m] = iso.slice(11, 16).split(':').map(Number); if (Number.isNaN(h)) return ''; return `${h % 12 || 12}:${pad2(m)} ${h < 12 ? 'AM' : 'PM'}`; }
-function relDay(iso) { const t = todayStr(), d = iso.slice(0, 10); if (d === t) return 'Today'; const y = new Date(); y.setDate(y.getDate() - 1); if (d === toIso(y).slice(0, 10)) return 'Yesterday'; return ''; }
+// ---- i18n: LANG is resolved in applyTheme() from settings.uiLanguage or the browser; t() falls back to English per key.
+let LANG = 'en';
+function resolveLang() {
+  const codes = LANGS.map(l => l[0]);
+  const set = state.data && S().uiLanguage;
+  if (set && codes.includes(set)) return set;
+  for (const nl of (navigator.languages || [navigator.language || 'en'])) {
+    const n = String(nl); if (codes.includes(n)) return n;
+    const base = n.split('-')[0].toLowerCase();
+    if (base === 'zh') return /tw|hk|mo|hant/i.test(n) ? 'zh-TW' : 'zh-CN';
+    if (base === 'pt') return 'pt-BR';
+    const hit = codes.find(c => c.split('-')[0] === base); if (hit) return hit;
+  }
+  return 'en';
+}
+function t(key, vars) { let str = (I18N[LANG] && I18N[LANG][key]) ?? I18N.en[key] ?? key; if (vars) for (const k in vars) str = str.split('{' + k + '}').join(vars[k]); return str; }
+const langName = () => (LANGS.find(l => l[0] === LANG) || ['', LANG])[1];
+const cjkDates = () => S().dateNumerals === 'cjk' && /^(zh|ja)/.test(LANG);
+const ZH_D = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+function zhNum(n) { if (n < 10) return ZH_D[n]; if (n < 20) return '十' + (n % 10 ? ZH_D[n % 10] : ''); return ZH_D[Math.floor(n / 10)] + '十' + (n % 10 ? ZH_D[n % 10] : ''); }
+const zhYear = y => String(y).split('').map(c => ZH_D[+c]).join('');
+const dtf = (opts, d) => { try { return new Intl.DateTimeFormat(LANG, opts).format(d); } catch (_) { return new Intl.DateTimeFormat('en', opts).format(d); } };
+const wd = d => dtf({ weekday: 'long' }, d);
+const wdShort = d => dtf({ weekday: 'short' }, d);
+const monthShort = m => dtf({ month: 'short' }, new Date(2000, m, 1));
+function fmtMonthYear(ym) { const [y, m] = ym.split('-').map(Number); if (cjkDates()) return `${zhYear(y)}年${zhNum(m)}月`; return dtf({ year: 'numeric', month: 'long' }, new Date(y, m - 1, 1)); }
+function fmtLong(iso) { const d = localDate(iso); if (cjkDates()) return `${zhYear(d.getFullYear())}年${zhNum(d.getMonth() + 1)}月${zhNum(d.getDate())}日 · ${wd(d)}`; return dtf({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }, d); }
+function fmtDayLine(iso) { const d = localDate(iso); if (cjkDates()) return `<b>${zhNum(d.getMonth() + 1)}月${zhNum(d.getDate())}日</b> ${wd(d)}`; return `<b>${dtf({ month: 'long', day: 'numeric' }, d)}</b> ${wd(d)}`; }
+function fmtMonthDay(iso) { const d = localDate(iso); if (cjkDates()) return `${zhNum(d.getMonth() + 1)}月${zhNum(d.getDate())}日`; return dtf({ month: 'long', day: 'numeric' }, d); }
+function fmtShort(iso) { return dtf({ year: 'numeric', month: 'short', day: 'numeric' }, localDate(iso)); }
+function fmtTime(iso) { const d = localDate(iso); if (Number.isNaN(+d) || !iso.slice(11, 13)) return ''; return dtf({ hour: 'numeric', minute: '2-digit' }, d); }
+function relDay(iso) { const td = todayStr(), d = iso.slice(0, 10); if (d === td) return t('today'); const y = new Date(); y.setDate(y.getDate() - 1); if (d === toIso(y).slice(0, 10)) return t('yesterday'); return ''; }
 function daysBetween(a, b) { return Math.round((localDate(b + 'T00:00') - localDate(a + 'T00:00')) / 86400000); }
 function fmtTemp(t) { if (t == null) return ''; return S().temperatureUnit === 'F' ? `${Math.round(t * 9 / 5 + 32)}°F` : `${Math.round(t)}°C`; }
 
@@ -170,36 +197,34 @@ function render() {
   afterRender();
 }
 
-const ICONS = {
-  timeline: '☰', calendar: '📅', media: '🖼', map: '🗺', otd: '🕰', prompts: '💡', starred: '★', stats: '📈', trash: '🗑', settings: '⚙', all: '📓', tags: '#',
-};
 function renderSidebar() {
   const d = state.data, r = state.route;
   const counts = {}; for (const e of d.entries) counts[e.journal] = (counts[e.journal] || 0) + 1;
   const isActive = (view, j) => r.view === view && (r.j || null) === (j || null) && !r.t;
   const item = (view, label, ico, extra = '', j = null, count = '') =>
-    `<div class="sb-item ${isActive(view, j) ? 'active' : ''}" data-action="nav" data-view="${view}" ${j ? `data-j="${attr(j)}"` : ''}>${extra || `<span class="sb-ico">${ico}</span>`}<span class="sb-label">${esc(label)}</span><span class="sb-count">${count}</span></div>`;
+    `<div class="sb-item ${isActive(view, j) ? 'active' : ''}" data-action="nav" data-view="${view}" ${j ? `data-j="${attr(j)}"` : ''}>${extra || `<span class="sb-ico">${li(ico)}</span>`}<span class="sb-label">${esc(label)}</span><span class="sb-count">${count}</span></div>`;
   const tags = tagCounts().slice(0, 40);
   return `<aside class="sidebar">
-    <div class="sb-search"><input type="search" id="search" placeholder="Search entries" value="${attr(state.query)}" autocomplete="off"></div>
+    <div class="sb-brand">htmldiary <small>${esc(t('brandSub'))}</small></div>
+    <div class="sb-search"><input type="search" id="search" placeholder="${attr(t('searchEntries'))}" value="${attr(state.query)}" autocomplete="off"></div>
     <div class="sb-scroll">
-      <div class="sb-section">Journals <button data-action="journal-new" title="New journal">+</button></div>
-      ${item('timeline', 'All Entries', ICONS.all, '', null, d.entries.length)}
-      ${d.journals.map(j => item('timeline', j.name, '', `<span class="sb-dot" style="background:${attr(j.color)}"></span>`, j.id, counts[j.id] || 0)).join('')}
-      <div class="sb-section">Views</div>
-      ${item('starred', 'Favorites', ICONS.starred, '', null, d.entries.filter(e => e.starred).length)}
-      ${item('otd', 'On This Day', ICONS.otd)}
-      ${item('calendar', 'Calendar', ICONS.calendar)}
-      ${item('media', 'Media', ICONS.media, '', null, d.entries.reduce((n, e) => n + e.photos.length, 0))}
-      ${item('map', 'Map', ICONS.map)}
-      ${item('prompts', 'Daily Prompts', ICONS.prompts)}
-      ${item('stats', 'Streaks & Stats', ICONS.stats)}
-      ${item('trash', 'Trash', ICONS.trash, '', null, d.trash.length || '')}
-      ${tags.length ? `<div class="sb-section">Tags</div><div class="sb-tags">${tags.map(([t, n]) => `<span class="tag-chip ${r.t === t ? 'active' : ''}" data-action="tag" data-tag="${attr(t)}">${esc(t)} <small>${n}</small></span>`).join('')}</div>` : ''}
+      <div class="sb-section"><span class="caps">${t('journals')}</span><button data-action="journal-new" title="${attr(t('newJournal'))}">+</button></div>
+      ${item('timeline', t('allEntries'), 'all', '', null, d.entries.length)}
+      ${d.journals.map(j => item('timeline', j.name, '', sealHtml(j.id, 'sm'), j.id, counts[j.id] || 0)).join('')}
+      <div class="sb-section"><span class="caps">${t('views')}</span></div>
+      ${item('starred', t('favorites'), 'star', '', null, d.entries.filter(e => e.starred).length)}
+      ${item('otd', t('onThisDay'), 'otd')}
+      ${item('calendar', t('calendar'), 'calendar')}
+      ${item('media', t('media'), 'media', '', null, d.entries.reduce((n, e) => n + e.photos.length, 0))}
+      ${item('map', t('map'), 'map')}
+      ${item('prompts', t('dailyPrompts'), 'prompts')}
+      ${item('stats', t('streaksStats'), 'stats')}
+      ${item('trash', t('trash'), 'trash', '', null, d.trash.length || '')}
+      ${tags.length ? `<div class="sb-section"><span class="caps">${t('tags')}</span></div><div class="sb-tags">${tags.map(([t, n]) => `<span class="tag-chip ${r.t === t ? 'active' : ''}" data-action="tag" data-tag="${attr(t)}">${esc(t)}<small>${n}</small></span>`).join('')}</div>` : ''}
     </div>
     <div class="sb-foot">
-      <div class="sb-item ${r.view === 'settings' ? 'active' : ''}" data-action="nav" data-view="settings"><span class="sb-ico">⚙</span><span class="sb-label">Settings</span></div>
-      <div class="sb-item" data-action="help"><span class="sb-ico">?</span></div>
+      <div class="sb-item ${r.view === 'settings' ? 'active' : ''}" data-action="nav" data-view="settings"><span class="sb-ico">${li('settings')}</span><span class="sb-label">${t('settings')}</span></div>
+      <div class="sb-item" data-action="help" title="${attr(t('shortcuts'))}"><span class="sb-ico">${li('help')}</span></div>
     </div>
   </aside>`;
 }
@@ -240,32 +265,64 @@ const SVG = {
   template: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
   loc: '<svg viewBox="0 0 24 24"><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2"/></svg>',
 };
+// thin line icons for the sidebar (brush-weight strokes)
+const LI = {
+  all: '<path d="M6 4h11a1 1 0 0 1 1 1v15H7a1 1 0 0 1-1-1zM6 4v15M10 8h5M10 12h5"/>',
+  star: '<path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 17l-5.3 2.7 1.1-5.9-4.3-4.1 5.9-.8z"/>',
+  otd: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15" rx="1.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  media: '<rect x="3.5" y="5" width="17" height="14" rx="1.5"/><circle cx="9" cy="10" r="1.5"/><path d="m20.5 16-5-5-8 8"/>',
+  map: '<path d="m3.5 6 5.5-2 6 2 5.5-2v14l-5.5 2-6-2-5.5 2zM9 4v14M15 6v14"/>',
+  prompts: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.7.6 1 1.3 1 2.1h5c0-.8.3-1.5 1-2.1A6 6 0 0 0 12 3z"/>',
+  stats: '<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>',
+  trash: '<path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13M10 11v6M14 11v6"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
+  help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/>',
+  timeline: '<path d="M5 6h14M5 12h14M5 18h9"/>',
+  loc: '<path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2"/>',
+  tag: '<path d="M3.5 12.5v-8a1 1 0 0 1 1-1h8l8 8-9 9zM8 8h.01"/>',
+  weather: '<path d="M7 17.5a4 4 0 0 1-.5-8 5.5 5.5 0 0 1 10.6 1.5A3.3 3.3 0 0 1 17 17.5z"/>',
+  time: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
+  download: '<path d="M12 4v11m-5-5 5 5 5-5M4 20h16"/>',
+  folder: '<path d="M3.5 6.5a1 1 0 0 1 1-1H10l2 2h7.5a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1z"/>',
+  dup: '<rect x="4" y="4" width="11" height="11" rx="1.5"/><path d="M9 20h10a1 1 0 0 0 1-1V9"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+};
+const li = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24">${LI[n]}</svg>`;
+function sealOf(j) { if (!j) return '?'; const t = (j.seal || '').trim(); if (t) return t.slice(0, 2); const c = (j.name || '?').trim()[0] || '?'; return /[a-z]/i.test(c) ? c.toUpperCase() : c; }
+const sealHtml = (jid, cls = '') => { const j = J(jid); return `<span class="seal ${cls}" style="--seal:${attr(journalColor(jid))}" title="${attr(j ? j.name : jid)}">${esc(sealOf(j))}</span>`; };
+const INK_PALETTE = ['#b8402f', '#2f4f6f', '#4f6b3a', '#9a6b2f', '#6b3a5b', '#3a6b6b', '#6b4a3a', '#2b2b2b', '#7a6f2e', '#4a4a7a'];
+const MOUNTAIN = '<svg class="mountain" viewBox="0 0 180 60" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 52c14-10 22-30 34-30s16 14 28 12 20-26 34-26 20 22 32 20 22-14 44-6" opacity=".9"/><path d="M14 56c18-6 26-16 40-14s22 8 36 4 24-12 44-8 28 8 42 10" opacity=".45"/><path d="M60 40c8-3 14-2 22 2" opacity=".35"/></svg>';
+
 
 // ---------------------------------------------------------------- list column
 function scopeTitle() {
   const r = state.route;
   if (r.t) return `#${r.t}`;
-  if (r.view === 'starred') return 'Favorites';
-  if (r.view === 'trash') return 'Trash';
-  if (r.j) { const j = J(r.j); return j ? `<span class="sb-dot" style="background:${attr(j.color)}"></span>${esc(j.name)}` : 'Journal'; }
-  return 'All Entries';
+  if (r.view === 'starred') return t('favorites');
+  if (r.view === 'trash') return t('trash');
+  if (r.j) { const j = J(r.j); return j ? `${sealHtml(j.id, 'lg')}${esc(j.name)}` : t('journal'); }
+  return t('allEntries');
 }
 function renderListCol() {
   const r = state.route;
   const f = state.filters;
   const anyFilter = f.starred || f.photos || f.year;
-  const views = [['timeline', ICONS.timeline, 'Timeline'], ['calendar', ICONS.calendar, 'Calendar'], ['media', ICONS.media, 'Media']];
+  const views = [['timeline', t('timeline')], ['calendar', t('calendar')], ['media', t('media')]];
   const isTrash = r.view === 'trash';
   const head = `<div class="list-head">
-      <button class="icon-btn mob-only" data-action="sb-open" title="Menu">${SVG.menu}</button>
+      <button class="icon-btn mob-only" data-action="sb-open" title="${attr(t('menu'))}">${SVG.menu}</button>
       <h2>${scopeTitle()}</h2>
-      ${isTrash ? `<button class="btn small danger" data-action="trash-empty">Empty</button>` : `
-      <button class="icon-btn ${anyFilter ? 'active' : ''}" data-action="filter-menu" title="Filter & sort">${SVG.filter}</button>
-      <button class="icon-btn" data-action="list-menu" title="More">${SVG.more}</button>
-      <button class="icon-btn primary" data-action="new-entry" title="New entry (${MOD}+N)">${SVG.plus}</button>`}
+      ${isTrash ? `<button class="btn small danger" data-action="trash-empty">${t('empty')}</button>` : `
+      <button class="icon-btn ${anyFilter ? 'active' : ''}" data-action="filter-menu" title="${attr(t('filterSort'))}">${SVG.filter}</button>
+      <button class="icon-btn" data-action="list-menu" title="${attr(t('more'))}">${SVG.more}</button>
+      <button class="icon-btn primary" data-action="new-entry" title="${attr(t('newEntryHint', { mod: MOD }))}">${SVG.plus}</button>`}
     </div>
-    ${isTrash || r.view === 'starred' ? '' : `<div class="view-switch">${views.map(([v, ico, label]) => `<button class="icon-btn ${r.view === v ? 'active' : ''}" data-action="nav" data-view="${v}" data-j="${attr(r.j || '')}" data-keep="1">${ico} ${label}</button>`).join('')}</div>`}
-    ${anyFilter || state.query ? `<div class="filter-bar">${state.query ? `<span class="tag-chip active">“${esc(state.query)}” <span data-action="clear-search">×</span></span>` : ''}${f.starred ? `<span class="tag-chip active" data-action="filter-toggle" data-k="starred">★ Starred ×</span>` : ''}${f.photos ? `<span class="tag-chip active" data-action="filter-toggle" data-k="photos">🖼 With media ×</span>` : ''}${f.year ? `<span class="tag-chip active" data-action="filter-year" data-y="">${f.year} ×</span>` : ''}</div>` : ''}`;
+    ${isTrash || r.view === 'starred' ? '' : `<div class="view-switch">${views.map(([v, label]) => `<button class="vs ${r.view === v ? 'active' : ''}" data-action="nav" data-view="${v}" data-j="${attr(r.j || '')}" data-keep="1">${label}</button>`).join('')}</div>`}
+    ${anyFilter || state.query ? `<div class="filter-bar">${state.query ? `<span class="tag-chip pill active">“${esc(state.query)}” <span data-action="clear-search">×</span></span>` : ''}${f.starred ? `<span class="tag-chip pill active" data-action="filter-toggle" data-k="starred">${t('favorites')} ×</span>` : ''}${f.photos ? `<span class="tag-chip pill active" data-action="filter-toggle" data-k="photos">${t('withMedia')} ×</span>` : ''}${f.year ? `<span class="tag-chip pill active" data-action="filter-year" data-y="">${f.year} ×</span>` : ''}</div>` : ''}`;
   let body;
   if (isTrash) body = renderTrashList();
   else if (r.view === 'calendar') body = renderCalendar();
@@ -274,44 +331,44 @@ function renderListCol() {
   return `<div class="list-col">${head}<div class="list-scroll" id="list-scroll">${body}</div></div>`;
 }
 
-function entryCard(e, { showDate = true, cls = '' } = {}) {
-  const t = titleOf(e), x = excerptOf(e);
-  const d = localDate(e.created);
+function entryCard(e, { showDate = true, cls = '', showSeal = true } = {}) {
+  const ttl = titleOf(e), x = excerptOf(e);
   const photo = e.photos.find(isImage);
   const meta = [];
-  meta.push(fmtTime(e.created));
-  if (e.location && e.location.name) meta.push('📍 ' + esc(e.location.name));
+  if (e.location && e.location.name) meta.push(li('loc') + esc(e.location.name));
   if (e.weather && e.weather.temp != null) meta.push(`${e.weather.icon || ''} ${fmtTemp(e.weather.temp)}`);
-  if (e.pinned) meta.push('📌');
-  const tagHtml = e.tags.slice(0, 4).map(t => `<span class="ec-tag">#${esc(t)}</span>`).join('');
+  if (e.pinned) meta.push(esc(t('pinned').toLowerCase()));
+  if (e.starred) meta.push('<span class="ec-star">★</span>');
+  const tagHtml = e.tags.slice(0, 4).map(tg => `<span class="ec-tag">${esc(tg)}</span>`).join('');
+  const showJ = showSeal && !state.route.j;
   return `<div class="entry-card ${cls} ${state.route.e === e.id ? 'selected' : ''}" data-action="open" data-id="${e.id}">
-    <div class="ec-date">${showDate ? `<div class="ec-dow">${DOWS[d.getDay()].slice(0, 3).toUpperCase()}</div><div class="ec-day">${d.getDate()}</div>` : ''}</div>
-    <div class="ec-body" style="border-left-color:${attr(journalColor(e.journal))}">
-      <div class="ec-title ${t ? '' : 'untitled'}">${t ? esc(t) : (photo ? 'Photo' : 'Empty entry')}${e.starred ? ' <span class="ec-star">★</span>' : ''}</div>
+    <div class="ec-body">
+      <div class="ec-top">${showJ ? sealHtml(e.journal, 'sm') : ''}<span class="ec-title ${ttl ? '' : 'untitled'}">${ttl ? esc(ttl) : (photo ? t('photo') : t('emptyEntry'))}</span><span class="ec-time">${fmtTime(e.created)}</span></div>
       ${x ? `<div class="ec-excerpt">${esc(x)}</div>` : ''}
-      <div class="ec-meta">${meta.map(m => `<span>${m}</span>`).join('')}${tagHtml}</div>
+      ${meta.length || tagHtml ? `<div class="ec-meta">${meta.map(m => `<span>${m}</span>`).join('')}${tagHtml}</div>` : ''}
     </div>
     ${photo ? `<div class="ec-thumb-wrap"><img class="ec-thumb" src="${attr(photo)}" loading="lazy" alt="">${e.photos.length > 1 ? `<span class="ec-thumb-count">${e.photos.length}</span>` : ''}</div>` : ''}
   </div>`;
 }
 
 function renderTimeline(list) {
-  if (!list.length) return `<div class="empty"><strong>${state.query || state.filters.starred || state.filters.photos ? 'No matches' : 'No entries yet'}</strong>${state.query ? 'Try a different search.' : `Press <span class="kbd">${MOD}</span> <span class="kbd">N</span> or the + button to write your first entry.`}<br><button class="btn primary" data-action="new-entry">New Entry</button></div>`;
+  if (!list.length) return `<div class="empty">${MOUNTAIN}<strong>${state.query || state.filters.starred || state.filters.photos ? t('noMatches') : t('noEntriesYet')}</strong>${state.query ? t('tryDifferentSearch') : t('pressToWrite', { mod: `<span class="kbd">${MOD}</span>` })}<br><button class="btn primary" data-action="new-entry">${t('newEntry')}</button></div>`;
   let out = '', month = '', day = '';
   for (const e of list) {
     const ym = e.created.slice(0, 7);
-    if (e.pinned && month !== 'pinned') { month = 'pinned'; out += `<div class="tl-month">📌 Pinned</div>`; }
+    if (e.pinned && month !== 'pinned') { month = 'pinned'; out += `<div class="tl-month">${t('pinned')}</div>`; }
     else if (!e.pinned && ym !== month) { month = ym; day = ''; out += `<div class="tl-month">${fmtMonthYear(ym)}</div>`; }
-    const dd = dayOf(e); const showDate = e.pinned || dd !== day; day = dd;
-    out += entryCard(e, { showDate });
+    const dd = dayOf(e);
+    if (!e.pinned && dd !== day) { day = dd; out += `<div class="tl-day">${fmtDayLine(e.created)}${relDay(e.created) ? ` · ${relDay(e.created)}` : ''}</div>`; }
+    out += entryCard(e);
   }
   return out;
 }
 
 function renderTrashList() {
-  const t = state.data.trash;
-  if (!t.length) return `<div class="empty"><strong>Trash is empty</strong>Deleted entries stay here until you empty the trash.</div>`;
-  return t.map(e => entryCard(e, { cls: 'trash-card' })).join('');
+  const list = state.data.trash;
+  if (!list.length) return `<div class="empty">${MOUNTAIN}<strong>${t('trashIsEmpty')}</strong>${t('trashEmptyHint')}</div>`;
+  return list.map(e => entryCard(e, { cls: 'trash-card' })).join('');
 }
 
 function renderCalendar() {
@@ -334,19 +391,19 @@ function renderCalendar() {
     const dots = [...new Set(list.map(e => e.journal))].slice(0, 4).map(j => `<i style="background:${attr(journalColor(j))}"></i>`).join('');
     cells.push(`<div class="${cls}" data-action="cal-day" data-d="${ds}" ${photo ? `style="background-image:url('${attr(photo)}')"` : ''}><span class="cal-num">${d.getDate()}</span>${dots && !photo ? `<div class="cal-dots">${dots}</div>` : ''}</div>`);
   }
-  const dows = []; for (let i = 0; i < 7; i++) dows.push(`<div class="cal-dow">${DOWS[(fdow + i) % 7].slice(0, 2)}</div>`);
+  const dows = []; for (let i = 0; i < 7; i++) { const dd = new Date(2023, 0, 1 + ((fdow + i) % 7)); dows.push(`<div class="cal-dow">${esc(wdShort(dd))}</div>`); }
   const sel = state.route.d;
   const dayList = sel ? (byDay[sel] || []) : [];
-  const below = sel ? (dayList.length ? `<div class="tl-month">${fmtLong(sel + 'T00:00')}</div>` + dayList.map(e => entryCard(e, { showDate: false })).join('') : `<div class="empty"><strong>${fmtLong(sel + 'T00:00')}</strong>No entries on this day.<br><button class="btn primary" data-action="new-entry" data-d="${sel}">Write about this day</button></div>`) : `<div class="empty">Select a day to see its entries.</div>`;
+  const below = sel ? (dayList.length ? `<div class="tl-day" style="padding-top:14px">${fmtDayLine(sel + 'T00:00')}</div>` + dayList.map(e => entryCard(e)).join('') : `<div class="empty"><strong>${fmtLong(sel + 'T00:00')}</strong>${t('noEntriesOnDay')}<br><button class="btn primary" data-action="new-entry" data-d="${sel}">${t('writeAboutDay')}</button></div>`) : `<div class="empty">${t('selectDay')}</div>`;
   return `<div class="cal">
-    <div class="cal-head"><button class="icon-btn" data-action="cal-nav" data-n="-1">${SVG.prev}</button><b data-action="cal-today" style="cursor:pointer">${MONTHS[m - 1]} ${y}</b><button class="icon-btn" data-action="cal-nav" data-n="1">${SVG.next}</button></div>
+    <div class="cal-head"><button class="icon-btn" data-action="cal-nav" data-n="-1">${SVG.prev}</button><b data-action="cal-today" style="cursor:pointer">${fmtMonthYear(`${y}-${pad2(m)}`)}</b><button class="icon-btn" data-action="cal-nav" data-n="1">${SVG.next}</button></div>
     <div class="cal-grid">${dows.join('')}${cells.join('')}</div>
   </div>${below}`;
 }
 
 function renderMediaGrid() {
   const list = scopeEntries().filter(e => e.photos.length);
-  if (!list.length) return `<div class="empty"><strong>No media yet</strong>Photos and videos you add to entries will show up here.</div>`;
+  if (!list.length) return `<div class="empty">${MOUNTAIN}<strong>${t('noMediaYet')}</strong>${t('noMediaHint')}</div>`;
   let out = '<div class="media-grid">', month = '';
   for (const e of list) {
     const ym = e.created.slice(0, 7);
@@ -367,9 +424,9 @@ function renderDetailCol() {
   if (!e) {
     const list = scopeEntries();
     const st = streaks(state.data.entries);
-    return `<div class="detail-col"><div class="empty" style="margin:auto"><strong>${list.length ? 'Select an entry' : 'Welcome to htmldiary'}</strong>
-      ${st.current ? `🔥 ${st.current}-day streak · ` : ''}${state.data.entries.length} entries · ${state.data.journals.length} journal${state.data.journals.length === 1 ? '' : 's'}<br>
-      <button class="btn primary" data-action="new-entry">New Entry</button> <button class="btn" data-action="nav" data-view="otd">On This Day</button></div></div>`;
+    return `<div class="detail-col"><div class="empty" style="margin:auto">${MOUNTAIN}<strong>${list.length ? t('selectEntry') : t('welcome')}</strong>
+      ${st.current ? t('dayStreak', { n: st.current }) + ' · ' : ''}${t('nEntries', { n: state.data.entries.length })} · ${t('nJournals', { n: state.data.journals.length })}<br>
+      <button class="btn primary" data-action="new-entry">${t('newEntry')}</button> <button class="btn" data-action="nav" data-view="otd">${t('onThisDay')}</button></div></div>`;
   }
   const j = J(e.journal) || { name: e.journal, color: '#888' };
   const list = isTrash ? state.data.trash : scopeEntries();
@@ -377,48 +434,47 @@ function renderDetailCol() {
   const prev = list[idx - 1], next = list[idx + 1];
   const rel = relDay(e.created);
   const head = `<div class="d-head">
-    <button class="icon-btn mob-only" data-action="close-entry" title="Back">${SVG.back}</button>
-    <button class="icon-btn" data-action="open" data-id="${prev ? prev.id : ''}" ${prev ? '' : 'disabled style="opacity:.3"'} title="Newer">${SVG.prev}</button>
-    <button class="icon-btn" data-action="open" data-id="${next ? next.id : ''}" ${next ? '' : 'disabled style="opacity:.3"'} title="Older">${SVG.next}</button>
-    <span class="d-date" data-action="date-menu" title="Change date">${rel ? rel + ' · ' : ''}${fmtLong(e.created)}<small>${fmtTime(e.created)}</small></span>
+    <button class="icon-btn mob-only" data-action="close-entry" title="${attr(t('back'))}">${SVG.back}</button>
+    <button class="icon-btn" data-action="open" data-id="${prev ? prev.id : ''}" ${prev ? '' : 'disabled style="opacity:.3"'} title="${attr(t('newer'))}">${SVG.prev}</button>
+    <button class="icon-btn" data-action="open" data-id="${next ? next.id : ''}" ${next ? '' : 'disabled style="opacity:.3"'} title="${attr(t('older'))}">${SVG.next}</button>
+    <span class="d-date" data-action="date-menu" title="${attr(t('changeDate'))}">${rel ? rel + ' · ' : ''}${fmtLong(e.created)}<small>${fmtTime(e.created)}</small></span>
     <span class="spacer"></span>
-    ${isTrash ? `<button class="btn small" data-action="trash-restore" data-id="${e.id}">Restore</button><button class="btn small danger" data-action="trash-purge" data-id="${e.id}">Delete forever</button>` : `
-    <span class="chip" data-action="journal-menu"><span class="sb-dot" style="background:${attr(j.color)}"></span>${esc(j.name)} ▾</span>
-    <button class="icon-btn star-btn ${e.starred ? 'on' : ''}" data-action="star" title="Favorite">${e.starred ? SVG.starOn : SVG.star}</button>
-    <button class="icon-btn pin-btn ${e.pinned ? 'on' : ''}" data-action="pin" title="Pin">${SVG.pin}</button>
-    <button class="btn small ${state.editing ? 'primary' : ''}" data-action="toggle-edit" title="${MOD}+E">${state.editing ? 'Done' : 'Edit'}</button>
-    <button class="icon-btn" data-action="entry-menu" title="More">${SVG.more}</button>`}
+    ${isTrash ? `<button class="btn small" data-action="trash-restore" data-id="${e.id}">${t('restore')}</button><button class="btn small danger" data-action="trash-purge" data-id="${e.id}">${t('deleteForever')}</button>` : `
+    <span class="chip" data-action="journal-menu">${sealHtml(e.journal, 'sm')}${esc(j.name)} ▾</span>
+    <button class="icon-btn star-btn ${e.starred ? 'on' : ''}" data-action="star" title="${attr(t('favorite'))}">${e.starred ? SVG.starOn : SVG.star}</button>
+    <button class="icon-btn pin-btn ${e.pinned ? 'on' : ''}" data-action="pin" title="${attr(t('pin'))}">${SVG.pin}</button>
+    <button class="btn small ${state.editing ? 'primary' : ''}" data-action="toggle-edit" title="${MOD}+E">${state.editing ? t('done') : t('edit')}</button>
+    <button class="icon-btn" data-action="entry-menu" title="${attr(t('more'))}">${SVG.more}</button>`}
   </div>`;
   const loc = e.location;
   const wx = e.weather;
   const meta = `<div class="d-meta">
-    ${loc && (loc.name || loc.address) ? `<span class="chip" data-action="loc-menu" title="${attr(loc.address || '')}">📍 ${esc(loc.name || loc.address)}</span>` : (isTrash ? '' : `<span class="chip ghost" data-action="loc-menu">📍 Add location</span>`)}
-    ${wx && wx.temp != null ? `<span class="chip" data-action="wx-menu" title="${attr(wx.desc || '')}">${wx.icon || '🌤'} ${fmtTemp(wx.temp)} ${esc(wx.desc || '')}</span>` : (isTrash ? '' : `<span class="chip ghost" data-action="wx-fetch">🌤 Weather</span>`)}
-    ${e.tags.map(t => `<span class="chip" data-action="tag-nav" data-tag="${attr(t)}">#${esc(t)}${isTrash ? '' : ` <span class="x" data-action="tag-remove" data-tag="${attr(t)}">×</span>`}</span>`).join('')}
-    ${isTrash ? '' : `<span class="chip ghost" data-action="tag-add">+ Tag</span>`}
-    ${e.template ? `<span class="chip" title="Template">📝 ${esc(e.template)}</span>` : ''}
+    ${loc && (loc.name || loc.address) ? `<span class="chip" data-action="loc-menu" title="${attr(loc.address || '')}">${li('loc')}${esc(loc.name || loc.address)}</span>` : (isTrash ? '' : `<span class="chip ghost" data-action="loc-menu">${li('loc')}${t('location')}</span>`)}
+    ${wx && wx.temp != null ? `<span class="chip" data-action="wx-menu" title="${attr(wx.desc || '')}">${wx.icon || ''} ${fmtTemp(wx.temp)} ${esc(wx.desc || '')}</span>` : (isTrash ? '' : `<span class="chip ghost" data-action="wx-fetch">${li('weather')}${t('weather')}</span>`)}
+    ${e.tags.map(tg => `<span class="chip" data-action="tag-nav" data-tag="${attr(tg)}">#${esc(tg)}${isTrash ? '' : ` <span class="x" data-action="tag-remove" data-tag="${attr(tg)}">×</span>`}</span>`).join('')}
+    ${isTrash ? '' : `<span class="chip ghost" data-action="tag-add">${li('tag')}${t('tag')}</span>`}
+    ${e.template ? `<span class="chip" title="${attr(t('template'))}">${li('copy')}${esc(e.template)}</span>` : ''}
   </div>`;
   let body, foot = '';
   if (state.editing && !isTrash) {
-    body = `<textarea class="editor" id="editor" placeholder="Start writing…" spellcheck="true">${esc(e.text)}</textarea>`;
-    const fmt = (a, ico, title) => `<button class="fmt" data-action="fmt" data-f="${a}" title="${title}">${ico}</button>`;
-    foot = `<div class="d-foot">
-      ${fmt('bold', SVG.bold, `Bold (${MOD}+B)`)}${fmt('italic', SVG.italic, `Italic (${MOD}+I)`)}${fmt('h1', SVG.h, 'Heading')}<span class="sep"></span>
-      ${fmt('ul', SVG.ul, 'Bulleted list')}${fmt('ol', SVG.ol, 'Numbered list')}${fmt('task', SVG.task, 'Checklist')}${fmt('quote', SVG.quote, 'Quote')}${fmt('code', SVG.code, 'Code')}${fmt('hr', SVG.hr, 'Divider')}<span class="sep"></span>
-      <button class="fmt" data-action="photo" title="Insert photo / video">${SVG.photo}</button>
-      <button class="fmt" data-action="template-menu" title="Insert template">${SVG.template}</button>
-      <button class="fmt" data-action="fmt" data-f="date" title="Insert current time">🕒</button>
-      <span class="status" id="status">${wordCount(e.text)} words</span>
-    </div>`;
+    const fmt = (a, label, title) => `<button class="fmt" data-action="fmt" data-f="${a}" title="${title}">${label}</button>`;
+    body = `<div class="fmt-bar">
+      ${fmt('bold', '<b>B</b>', `${t('bold')} (${MOD}+B)`)}${fmt('italic', '<i>I</i>', `${t('italic')} (${MOD}+I)`)}${fmt('h1', 'H', t('heading'))}<span class="sep"></span>
+      ${fmt('ul', '•', t('bulletedList'))}${fmt('ol', '1.', t('numberedList'))}${fmt('task', '☐', t('checklist'))}${fmt('quote', '❝', t('quote'))}${fmt('code', '‹›', t('code'))}${fmt('hr', '〰', t('divider'))}<span class="sep"></span>
+      <button class="fmt" data-action="photo" title="${attr(t('insertMedia'))}">${li('media')}</button>
+      <button class="fmt" data-action="template-menu" title="${attr(t('insertTemplate'))}">${li('copy')}</button>
+      <button class="fmt" data-action="fmt" data-f="date" title="${attr(t('insertTime'))}">${li('time')}</button>
+      <span class="status" id="status">${t('nWords', { n: wordCount(e.text) })}</span>
+    </div><textarea class="editor" id="editor" placeholder="${attr(t('startWriting'))}" spellcheck="true">${esc(e.text)}</textarea>`;
   } else {
     body = `<article class="prose" id="prose">${renderMarkdown(e.text)}</article>`;
-    if (!isTrash) foot = `<div class="d-foot"><span class="status">${wordCount(e.text)} words · ${e.photos.length ? e.photos.length + ' media · ' : ''}edited ${fmtShort(e.modified)}</span></div>`;
+    if (!isTrash) foot = `<div class="d-foot"><span class="status">${t('nWords', { n: wordCount(e.text) })} · ${e.photos.length ? t('nMedia', { n: e.photos.length }) + ' · ' : ''}${t('edited', { date: fmtShort(e.modified) })}</span></div>`;
   }
   return `<div class="detail-col" id="detail" style="position:relative">${head}<div class="d-scroll">${meta}<div class="d-body">${body}</div></div>${foot}</div>`;
 }
 
 function renderMarkdown(text) {
-  if (!text || !text.trim()) return '<p class="empty-hint">Nothing written yet. Press Edit to start.</p>';
+  if (!text || !text.trim()) return `<p class="empty-hint">${t('nothingWritten')}</p>`;
   let html = marked.parse(text, { gfm: true, breaks: true, mangle: false, headerIds: false });
   // task lists: make checkboxes live and add classes
   let i = 0;
@@ -438,17 +494,16 @@ function renderMarkdown(text) {
 
 // ---------------------------------------------------------------- wide views
 function renderOnThisDay() {
-  const t = todayStr(); const md = t.slice(5);
-  const yearNow = +t.slice(0, 4);
+  const td = todayStr(); const md = td.slice(5);
+  const yearNow = +td.slice(0, 4);
   const list = state.data.entries.filter(e => e.created.slice(5, 10) === md).sort((a, b) => b.created.localeCompare(a.created));
   const groups = new Map(); for (const e of list) { const y = +e.created.slice(0, 4); (groups.get(y) || groups.set(y, []).get(y)).push(e); }
-  const d = localDate(t + 'T00:00');
-  let out = `<div class="page"><h1>On This Day</h1><p class="lead">${d.getDate()} ${MONTHS[d.getMonth()]} — looking back across your journals.</p>`;
-  if (!list.length) out += `<div class="empty"><strong>Nothing from this day yet</strong>Write today, and next year this page will greet you with it.<br><button class="btn primary" data-action="new-entry">Write today's entry</button></div>`;
+  let out = `<div class="page"><h1>${t('onThisDay')}</h1><p class="lead">${t('otdLead', { date: fmtMonthDay(td + 'T00:00') })}</p>`;
+  if (!list.length) out += `<div class="empty">${MOUNTAIN}<strong>${t('nothingThisDay')}</strong>${t('nothingThisDayHint')}<br><button class="btn primary" data-action="new-entry">${t('writeToday')}</button></div>`;
   for (const [y, es] of groups) {
     const diff = yearNow - y;
-    out += `<div class="otd-year">${diff === 0 ? 'Today' : diff === 1 ? '1 year ago' : `${diff} years ago`} · ${y}</div>`;
-    out += es.map(e => `<div class="otd-card" data-action="open-tl" data-id="${e.id}" style="border-left-color:${attr(journalColor(e.journal))}"><div class="t">${esc(titleOf(e) || 'Untitled')}</div><div class="x">${esc(stripMd(e.text).slice(0, 400))}</div><div class="m">${esc(J(e.journal)?.name || '')} · ${fmtTime(e.created)}${e.location?.name ? ' · 📍 ' + esc(e.location.name) : ''}${e.photos.length ? ` · 🖼 ${e.photos.length}` : ''}</div></div>`).join('');
+    out += `<div class="otd-year">${diff === 0 ? t('today') : diff === 1 ? t('oneYearAgo') : t('nYearsAgo', { n: diff })} · ${y}</div>`;
+    out += es.map(e => `<div class="otd-card" data-action="open-tl" data-id="${e.id}"><div class="t">${sealHtml(e.journal, 'sm')}${esc(titleOf(e) || t('untitled'))}</div><div class="x">${esc(stripMd(e.text).slice(0, 400))}</div><div class="m">${esc(J(e.journal)?.name || '')} · ${fmtTime(e.created)}${e.location?.name ? ' · ' + esc(e.location.name) : ''}${e.photos.length ? ` · ${t('nMedia', { n: e.photos.length })}` : ''}</div></div>`).join('');
   }
   return out + '</div>';
 }
@@ -458,10 +513,10 @@ function renderPrompts() {
   const doy = Math.floor((new Date() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
   const todayIdx = prompts.length ? doy % prompts.length : 0;
   const answered = new Set(state.data.entries.map(e => e.prompt).filter(Boolean));
-  const card = (p, i, today) => `<div class="p-card ${today ? 'today' : ''}"><span class="q">${esc(p)}</span>${answered.has(p) ? '<span class="tag-chip">answered</span>' : ''}<button class="btn ${today ? 'primary' : ''} small" data-action="prompt-answer" data-i="${i}">Answer</button></div>`;
-  return `<div class="page"><h1>Daily Prompts</h1><p class="lead">A question a day. Edit the list in Settings → Prompts.</p>
-    <h2>Today's prompt</h2>${prompts.length ? card(prompts[todayIdx], todayIdx, true) : '<div class="empty">No prompts configured.</div>'}
-    <h2>All prompts</h2>${prompts.map((p, i) => i === todayIdx ? '' : card(p, i, false)).join('')}</div>`;
+  const card = (p, i, today) => `<div class="p-card ${today ? 'today' : ''}"><span class="q">${esc(p)}</span>${answered.has(p) ? `<span class="tag-chip pill">${t('answered')}</span>` : ''}<button class="btn ${today ? 'primary' : ''} small" data-action="prompt-answer" data-i="${i}">${t('answer')}</button></div>`;
+  return `<div class="page"><h1>${t('dailyPrompts')}</h1><p class="lead">${t('promptsLead')}</p>
+    <h2>${t('todaysPrompt')}</h2>${prompts.length ? card(prompts[todayIdx], todayIdx, true) : `<div class="empty">${t('noPrompts')}</div>`}
+    <h2>${t('allPrompts')}</h2>${prompts.map((p, i) => i === todayIdx ? '' : card(p, i, false)).join('')}</div>`;
 }
 
 function renderStats() {
@@ -479,33 +534,33 @@ function renderStats() {
   let heat = '';
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const ds = toIso(d).slice(0, 10); const n = perDay[ds] || 0;
-    heat += `<i class="${n ? 'l' + Math.min(4, n) : ''}" title="${ds}: ${n} ${n === 1 ? 'entry' : 'entries'}"${n ? ` data-action="open-day" data-d="${ds}" style="cursor:pointer"` : ''}></i>`;
+    heat += `<i class="${n ? 'l' + Math.min(4, n) : ''}" title="${ds}: ${attr(t('nEntries', { n }))}"${n ? ` data-action="open-day" data-d="${ds}" style="cursor:pointer"` : ''}></i>`;
   }
   const first = es.length ? es.reduce((a, e) => e.created < a ? e.created : a, es[0].created) : null;
   const months = {}; for (const e of es) { const m = +e.created.slice(5, 7); months[m] = (months[m] || 0) + 1; }
   const maxM = Math.max(1, ...Object.values(months));
   const longestEntry = es.reduce((a, e) => wordCount(e.text) > (a ? wordCount(a.text) : -1) ? e : a, null);
-  const jrows = state.data.journals.map(j => { const n = es.filter(e => e.journal === j.id).length; return `<div class="stat" style="border-left:4px solid ${attr(j.color)}"><b>${n}</b><span>${esc(j.name)}</span></div>`; }).join('');
-  return `<div class="page"><h1>Streaks & Stats</h1><p class="lead">${first ? `Journaling since ${fmtShort(first)}.` : 'No entries yet.'}</p>
+  const jrows = state.data.journals.map(j => { const n = es.filter(e => e.journal === j.id).length; return `<div class="stat"><b>${n}</b><span>${sealHtml(j.id, 'sm')} ${esc(j.name)}</span></div>`; }).join('');
+  return `<div class="page"><h1>${t('streaksStats')}</h1><p class="lead">${first ? t('journalingSince', { date: fmtShort(first) }) : t('noEntries')}</p>
     <div class="cards">
-      <div class="stat"><b>🔥 ${st.current}</b><span>Current streak (days)</span></div>
-      <div class="stat"><b>${st.longest}</b><span>Longest streak</span></div>
-      <div class="stat"><b>${es.length}</b><span>Entries</span></div>
-      <div class="stat"><b>${st.days}</b><span>Days journaled</span></div>
-      <div class="stat"><b>${words.toLocaleString()}</b><span>Words</span></div>
-      <div class="stat"><b>${photos}</b><span>Media</span></div>
-      <div class="stat"><b>${es.length ? Math.round(words / es.length) : 0}</b><span>Avg words / entry</span></div>
-      <div class="stat"><b>${es.filter(e => e.starred).length}</b><span>Favorites</span></div>
+      <div class="stat"><b>${st.current}</b><span>${t('currentStreak')}</span></div>
+      <div class="stat"><b>${st.longest}</b><span>${t('longestStreak')}</span></div>
+      <div class="stat"><b>${es.length}</b><span>${t('entries')}</span></div>
+      <div class="stat"><b>${st.days}</b><span>${t('daysJournaled')}</span></div>
+      <div class="stat"><b>${words.toLocaleString(LANG)}</b><span>${t('words')}</span></div>
+      <div class="stat"><b>${photos}</b><span>${t('media')}</span></div>
+      <div class="stat"><b>${es.length ? Math.round(words / es.length) : 0}</b><span>${t('avgWords')}</span></div>
+      <div class="stat"><b>${es.filter(e => e.starred).length}</b><span>${t('favorites')}</span></div>
     </div>
-    <h2>Last 12 months</h2><div class="heat">${heat}</div>
-    <h2>Entries per year</h2>
+    <h2>${t('last12Months')}</h2><div class="heat">${heat}</div>
+    <h2>${t('entriesPerYear')}</h2>
     <div class="bars">${ys.map(y => `<div class="bar" data-action="filter-year" data-y="${y}" style="cursor:pointer"><span>${years[y]}</span><i style="height:${Math.round(years[y] / maxY * 100)}%"></i></div>`).join('')}</div>
     <div class="bar-labels">${ys.map(y => `<span>${y}</span>`).join('')}</div>
-    <h2>Entries by month</h2>
+    <h2>${t('entriesByMonth')}</h2>
     <div class="bars">${MONTHS.map((m, i) => `<div class="bar"><span>${months[i + 1] || ''}</span><i style="height:${Math.round((months[i + 1] || 0) / maxM * 100)}%"></i></div>`).join('')}</div>
-    <div class="bar-labels">${MONTHS.map(m => `<span>${m.slice(0, 3)}</span>`).join('')}</div>
-    <h2>Journals</h2><div class="cards">${jrows}</div>
-    ${longestEntry ? `<h2>Longest entry</h2><div class="otd-card" data-action="open-tl" data-id="${longestEntry.id}"><div class="t">${esc(titleOf(longestEntry) || 'Untitled')}</div><div class="m">${wordCount(longestEntry.text)} words · ${fmtShort(longestEntry.created)}</div></div>` : ''}
+    <div class="bar-labels">${MONTHS.map((m, i) => `<span>${esc(monthShort(i))}</span>`).join('')}</div>
+    <h2>${t('journals')}</h2><div class="cards">${jrows}</div>
+    ${longestEntry ? `<h2>${t('longestEntry')}</h2><div class="otd-card" data-action="open-tl" data-id="${longestEntry.id}"><div class="t">${esc(titleOf(longestEntry) || t('untitled'))}</div><div class="m">${t('nWords', { n: wordCount(longestEntry.text) })} · ${fmtShort(longestEntry.created)}</div></div>` : ''}
   </div>`;
 }
 
@@ -513,13 +568,13 @@ function renderMapView() { return `<div class="map-wrap"><div id="map"></div></d
 function initMap() {
   const el = $('#map'); if (!el || typeof L === 'undefined') return;
   if (state.map) { try { state.map.remove(); } catch (_) {} state.map = null; }
-  const map = L.map(el, { zoomControl: true });
+  const map = L.map(el, { zoomControl: true, attributionControl: true });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
   const pts = state.data.entries.filter(e => e.location && typeof e.location.lat === 'number' && typeof e.location.lon === 'number');
   const group = [];
   for (const e of pts) {
     const mk = L.circleMarker([e.location.lat, e.location.lon], { radius: 7, color: journalColor(e.journal), fillColor: journalColor(e.journal), fillOpacity: .8, weight: 2 }).addTo(map);
-    mk.bindPopup(`<b>${esc(titleOf(e) || 'Untitled')}</b>${esc(fmtShort(e.created))} · ${esc(e.location.name || '')}<br><a href="#/timeline?e=${e.id}">Open entry →</a>`);
+    mk.bindPopup(`<b>${esc(titleOf(e) || t('untitled'))}</b>${esc(fmtShort(e.created))} · ${esc(e.location.name || '')}<br><a href="#/timeline?e=${e.id}">${esc(t('openEntry'))}</a>`);
     group.push(mk);
   }
   if (group.length) map.fitBounds(L.featureGroup(group).getBounds().pad(0.2)); else map.setView([20, 0], 2);
@@ -532,37 +587,41 @@ function renderSettings() {
   const seg = (key, opts) => `<div class="seg">${opts.map(([v, l]) => `<button class="${s[key] === v ? 'on' : ''}" data-action="set" data-k="${key}" data-v="${attr(v)}">${l}</button>`).join('')}</div>`;
   const sw = (key) => `<button class="switch ${s[key] ? 'on' : ''}" data-action="set" data-k="${key}" data-v="${s[key] ? '' : '1'}" data-bool="1"></button>`;
   const row = (label, ctl, hint = '') => `<div class="form-row"><label>${label}${hint ? `<div class="hint">${hint}</div>` : ''}</label><div>${ctl}</div></div>`;
-  return `<div class="page"><h1>Settings</h1><p class="lead">Everything is stored as plain files in <code>${esc(d.dataDir)}</code>.</p>
-  <h2>Appearance</h2>
-  ${row('Theme', seg('theme', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]))}
-  ${row('Entry font', seg('contentFont', [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']]))}
-  ${row('Font size', `<input type="number" min="12" max="28" value="${s.fontSize}" data-set="fontSize" style="width:80px"> px`)}
-  ${row('Temperature', seg('temperatureUnit', [['C', '°C'], ['F', '°F']]))}
-  ${row('Week starts on', seg('firstDayOfWeek', [[1, 'Monday'], [0, 'Sunday']]))}
-  ${row('Sort timeline', seg('sortOrder', [['newest', 'Newest first'], ['oldest', 'Oldest first']]))}
-  <h2>Journals</h2>
-  <div id="journal-rows">${d.journals.map(j => `<div class="j-row" data-jid="${attr(j.id)}"><input type="color" value="${attr(j.color)}" data-jf="color"><input type="text" value="${attr(j.name)}" data-jf="name" placeholder="Name"><input type="text" class="desc" value="${attr(j.description || '')}" data-jf="description" placeholder="Description"><span><button class="btn small ${s.defaultJournal === j.id ? 'primary' : 'outline'}" data-action="set" data-k="defaultJournal" data-v="${attr(j.id)}" title="Default journal for new entries">${s.defaultJournal === j.id ? 'Default' : 'Make default'}</button> <button class="btn small danger" data-action="journal-delete" data-id="${attr(j.id)}" ${d.journals.length < 2 ? 'disabled' : ''}>Delete</button></span></div>`).join('')}</div>
-  <div class="actions"><button class="btn" data-action="journal-new">+ New journal</button><button class="btn primary" data-action="journals-save">Save journals</button></div>
-  <h2>Security</h2>
-  ${row('Passcode', s.passcodeHash ? `<button class="btn" data-action="passcode-set">Change</button> <button class="btn danger" data-action="passcode-clear">Remove</button>` : `<button class="btn" data-action="passcode-set">Set a passcode</button>`, 'Locks the page on load and after idle time. Data on disk stays unencrypted.')}
-  ${row('Auto-lock after', `<select data-set="autoLockMinutes">${[[0, 'Never'], [1, '1 minute'], [5, '5 minutes'], [15, '15 minutes'], [60, '1 hour']].map(([v, l]) => `<option value="${v}" ${+s.autoLockMinutes === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
-  <h2>Daily reminder</h2>
-  ${row('Remind me to write', sw('reminderEnabled'), 'Uses browser notifications while htmldiary is open in a tab.')}
-  ${row('At', `<input type="time" value="${attr(s.reminderTime || '21:00')}" data-set="reminderTime">`)}
-  <h2>Templates</h2>
-  <div id="template-rows">${d.templates.map((t, i) => `<div class="t-row" data-ti="${i}"><div class="t-head"><input type="text" value="${attr(t.icon || '')}" data-tf="icon" style="width:52px" placeholder="📝"><input type="text" value="${attr(t.name)}" data-tf="name" placeholder="Template name" style="flex:1"><button class="btn small danger" data-action="template-delete" data-i="${i}">Delete</button></div><textarea data-tf="body">${esc(t.body)}</textarea></div>`).join('')}</div>
-  <div class="actions"><button class="btn" data-action="template-new">+ New template</button><button class="btn primary" data-action="templates-save">Save templates</button></div>
-  <h2>Prompts</h2>
-  <p class="lead">One prompt per line. Today's prompt rotates through the list by day of year.</p>
-  <textarea id="prompts-text" style="width:100%;min-height:160px;font-family:var(--mono-font);font-size:12.5px;padding:8px 10px;border-radius:7px;border:1px solid var(--line-strong);background:var(--bg-elev)">${esc(d.prompts.join('\n'))}</textarea>
-  <div class="actions"><button class="btn primary" data-action="prompts-save">Save prompts</button></div>
-  <h2>Data</h2>
-  ${row('Export', `<a class="btn" href="/api/export.zip" download>⬇ Export everything (.zip)</a> <a class="btn" href="/api/export.json" download>⬇ JSON</a>`, 'The zip holds your Markdown entries, media, and a htmldiary.json snapshot.')}
-  ${row('Import from Day One', `<button class="btn" data-action="import-dayone">Choose Day One export (.zip / .json)</button>`, 'Day One → Export → JSON. Journals, photos, tags, locations, weather, stars are preserved.')}
-  ${row('Import htmldiary backup', `<button class="btn" data-action="import-htmldiary">Choose backup (.zip / .json)</button>`, 'Entries with ids that already exist are skipped.')}
-  ${row('Reload from disk', `<button class="btn" data-action="reload">Rescan data folder</button>`, 'Use after editing Markdown files by hand. Changes are also picked up automatically every few seconds.')}
-  <h2>About</h2>
-  <p class="lead">htmldiary · a local, file-first journal in the spirit of Day One. Entries are Markdown with front matter under <code>entries/</code>; media under <code>media/</code>; deleted entries under <code>trash/</code>. Shortcuts: <span class="kbd">?</span></p>
+  const hasContent = !!LOCAL_CONTENT[LANG];
+  return `<div class="page"><h1>${t('settings')}</h1><p class="lead">${t('settingsLead')} <code>${esc(d.dataDir)}</code></p>
+  <h2>${t('appearance')}</h2>
+  ${row(t('language'), `<select data-set="uiLanguage"><option value="" ${!s.uiLanguage ? 'selected' : ''}>${t('auto')}</option>${LANGS.map(([c, n]) => `<option value="${c}" ${s.uiLanguage === c ? 'selected' : ''}>${n}</option>`).join('')}</select>`, t('languageHint'))}
+  ${row(t('theme'), seg('theme', [['system', t('system')], ['light', t('light')], ['dark', t('dark')]]))}
+  ${row(t('entryFont'), seg('contentFont', [['serif', t('serif')], ['sans', t('sans')], ['mono', t('mono')]]))}
+  ${row(t('fontSize'), `<input type="number" min="12" max="28" value="${s.fontSize}" data-set="fontSize" style="width:80px"> px`)}
+  ${row(t('temperature'), seg('temperatureUnit', [['C', '°C'], ['F', '°F']]))}
+  ${/^(zh|ja)/.test(LANG) ? row(t('dateNumerals'), seg('dateNumerals', [['arabic', t('arabicNumerals')], ['cjk', t('cjkNumerals')]]), t('dateNumeralsHint')) : ''}
+  ${row(t('weekStartsOn'), seg('firstDayOfWeek', [[1, t('monday')], [0, t('sunday')]]))}
+  ${row(t('sortTimeline'), seg('sortOrder', [['newest', t('newestFirst')], ['oldest', t('oldestFirst')]]))}
+  <h2>${t('journals')}</h2>
+  <p class="lead">${t('journalsLead')}</p>
+  <div id="journal-rows">${d.journals.map(j => `<div class="j-row" data-jid="${attr(j.id)}"><input type="color" value="${attr(j.color)}" data-jf="color"><input type="text" class="sealtxt" value="${attr(j.seal || '')}" data-jf="seal" maxlength="2" placeholder="${attr(sealOf(j))}" title="${attr(t('sealText'))}"><input type="text" value="${attr(j.name)}" data-jf="name" placeholder="${attr(t('name'))}"><input type="text" class="desc" value="${attr(j.description || '')}" data-jf="description" placeholder="${attr(t('description'))}"><span><button class="btn small ${s.defaultJournal === j.id ? 'primary' : 'outline'}" data-action="set" data-k="defaultJournal" data-v="${attr(j.id)}" title="${attr(t('defaultJournalHint'))}">${s.defaultJournal === j.id ? t('default') : t('makeDefault')}</button> <button class="btn small danger" data-action="journal-delete" data-id="${attr(j.id)}" ${d.journals.length < 2 ? 'disabled' : ''}>${t('delete')}</button></span></div>`).join('')}</div>
+  <div class="actions"><button class="btn" data-action="journal-new">${t('addJournal')}</button><button class="btn primary" data-action="journals-save">${t('saveJournals')}</button></div>
+  <h2>${t('security')}</h2>
+  ${row(t('passcode'), s.passcodeHash ? `<button class="btn" data-action="passcode-set">${t('change')}</button> <button class="btn danger" data-action="passcode-clear">${t('remove')}</button>` : `<button class="btn" data-action="passcode-set">${t('setPasscode')}</button>`, t('passcodeHint'))}
+  ${row(t('autoLock'), `<select data-set="autoLockMinutes">${[[0, t('never')], [1, t('oneMinute')], [5, t('nMinutes', { n: 5 })], [15, t('nMinutes', { n: 15 })], [60, t('oneHour')]].map(([v, l]) => `<option value="${v}" ${+s.autoLockMinutes === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
+  <h2>${t('dailyReminder')}</h2>
+  ${row(t('remindMe'), sw('reminderEnabled'), t('reminderHint'))}
+  ${row(t('at'), `<input type="time" value="${attr(s.reminderTime || '21:00')}" data-set="reminderTime">`)}
+  <h2>${t('templates')}</h2>
+  <div id="template-rows">${d.templates.map((tp, i) => `<div class="t-row" data-ti="${i}"><div class="t-head"><input type="text" value="${attr(tp.icon || '')}" data-tf="icon" style="width:52px" placeholder="📝"><input type="text" value="${attr(tp.name)}" data-tf="name" placeholder="${attr(t('templateName'))}" style="flex:1"><button class="btn small danger" data-action="template-delete" data-i="${i}">${t('delete')}</button></div><textarea data-tf="body">${esc(tp.body)}</textarea></div>`).join('')}</div>
+  <div class="actions"><button class="btn" data-action="template-new">${t('addTemplate')}</button><button class="btn primary" data-action="templates-save">${t('saveTemplates')}</button>${hasContent ? `<button class="btn outline" data-action="load-templates">${t('loadBuiltinTemplates')}</button>` : ''}</div>
+  <h2>${t('prompts')}</h2>
+  <p class="lead">${t('promptsLead2')}</p>
+  <textarea id="prompts-text" class="prompts-text">${esc(d.prompts.join('\n'))}</textarea>
+  <div class="actions"><button class="btn primary" data-action="prompts-save">${t('savePrompts')}</button>${hasContent ? `<button class="btn outline" data-action="load-prompts">${t('loadBuiltinPrompts')}</button>` : ''}</div>
+  <h2>${t('data')}</h2>
+  ${row(t('export'), `<a class="btn" href="/api/export.zip" download>${t('exportZip')}</a> <a class="btn" href="/api/export.json" download>${t('exportJson')}</a>`, t('exportHint'))}
+  ${row(t('importDayOne'), `<button class="btn" data-action="import-dayone">${t('chooseDayOne')}</button>`, t('importDayOneHint'))}
+  ${row(t('importBackup'), `<button class="btn" data-action="import-htmldiary">${t('chooseBackup')}</button>`, t('importBackupHint'))}
+  ${row(t('reloadFromDisk'), `<button class="btn" data-action="reload">${t('rescan')}</button>`, t('rescanHint'))}
+  <h2>${t('about')}</h2>
+  <p class="lead">${t('aboutText')} <span class="kbd">?</span></p>
   </div>`;
 }
 
@@ -584,7 +643,7 @@ function afterRender() {
     ed.addEventListener('keydown', onEditorKey);
     ed.addEventListener('paste', onPaste);
     const det = $('#detail');
-    det.addEventListener('dragover', ev => { ev.preventDefault(); if (!$('.drop-hint', det)) det.insertAdjacentHTML('beforeend', '<div class="drop-hint">Drop to attach</div>'); });
+    det.addEventListener('dragover', ev => { ev.preventDefault(); if (!$('.drop-hint', det)) det.insertAdjacentHTML('beforeend', `<div class="drop-hint">${t('dropToAttach')}</div>`); });
     det.addEventListener('dragleave', ev => { if (ev.target === det) $('.drop-hint', det)?.remove(); });
     det.addEventListener('drop', ev => { ev.preventDefault(); $('.drop-hint', det)?.remove(); if (ev.dataTransfer.files.length) uploadFiles(ev.dataTransfer.files); });
   }
@@ -600,8 +659,9 @@ function renderDetailOnly() { const d = $('#detail'); const col = $('.detail-col
 function autoGrow(ta) { ta.style.height = 'auto'; ta.style.height = Math.max(ta.scrollHeight, window.innerHeight * 0.6) + 'px'; }
 function applyTheme() {
   const s = S(); const root = document.documentElement;
+  LANG = resolveLang(); root.lang = LANG; root.dir = RTL_LANGS.includes(LANG) ? 'rtl' : 'ltr';
   if (s.theme === 'light' || s.theme === 'dark') root.dataset.theme = s.theme; else delete root.dataset.theme;
-  root.style.setProperty('--content-font', s.contentFont === 'serif' ? 'var(--serif-font)' : s.contentFont === 'mono' ? 'var(--mono-font)' : 'var(--ui-font)');
+  root.style.setProperty('--content-font', s.contentFont === 'sans' ? 'var(--sans)' : s.contentFont === 'mono' ? 'var(--mono)' : 'var(--serif)');
   root.style.setProperty('--content-size', (s.fontSize || 17) + 'px');
 }
 
@@ -611,7 +671,7 @@ function onEditorInput(ed) {
   const e = currentEntry(); if (!e) return;
   e.text = ed.value; e.photos = photosFromText(e.text);
   autoGrow(ed);
-  const st = $('#status'); if (st) { st.textContent = `${wordCount(e.text)} words · saving…`; st.classList.add('saving'); }
+  const st = $('#status'); if (st) { st.textContent = `${t('nWords', { n: wordCount(e.text) })} · ${t('saving')}`; st.classList.add('saving'); }
   queueSave(e);
   updateCardInPlace(e);
 }
@@ -632,8 +692,8 @@ async function saveNow(e) {
     const { id, text, journal, created, starred, pinned, tags, location, weather, template, prompt } = e;
     const saved = await api('PUT', `/api/entries/${id}`, { text, journal, created, starred, pinned, tags, location, weather, template, prompt });
     Object.assign(e, saved);
-    const st = $('#status'); if (st && state.route.e === e.id) { st.textContent = `${wordCount(e.text)} words · saved`; st.classList.remove('saving'); }
-  } catch (err) { toast('Save failed: ' + err.message, 4000); }
+    const st = $('#status'); if (st && state.route.e === e.id) { st.textContent = `${t('nWords', { n: wordCount(e.text) })} · ${t('saved')}`; st.classList.remove('saving'); }
+  } catch (err) { toast(t('saveFailed') + ': ' + err.message, 4000); }
   finally { state.saving--; }
 }
 async function flushSaves() { for (const [id] of [...state.pending]) { const e = E(id); if (e) await saveNow(e); } }
@@ -670,7 +730,7 @@ async function deleteEntry(id) {
   state.data.entries = state.data.entries.filter(x => x.id !== id);
   state.data.trash.unshift({ ...e, deletedAt: nowIso() });
   state.editing = false;
-  toast('Moved to Trash');
+  toast(t('movedToTrash'));
   go({ e: null });
   if (!state.route.e) render();
 }
@@ -733,12 +793,12 @@ async function uploadFiles(files) {
   const ed = $('#editor');
   for (const f of files) {
     try {
-      toast(`Uploading ${f.name}…`, 1200);
+      toast(t('uploading', { name: f.name }), 1200);
       const r = await fetch('/api/media', { method: 'POST', headers: { 'X-Filename': encodeURIComponent(f.name || 'paste.png'), 'Content-Type': f.type || 'application/octet-stream' }, body: f });
       const data = await r.json(); if (!r.ok) throw new Error(data.error);
       const md = `![](${data.url})\n`;
       if (ed) insertAtCursor(ed, md); else { e.text = (e.text.trimEnd() + '\n\n' + md); e.photos = photosFromText(e.text); await saveNow(e); renderDetailOnly(); renderListOnly(); }
-    } catch (err) { toast('Upload failed: ' + err.message, 4000); }
+    } catch (err) { toast(t('uploadFailed') + ': ' + err.message, 4000); }
   }
 }
 function toggleEdit(on) {
@@ -763,7 +823,7 @@ function showPop(anchor, html, { width } = {}) {
   return pop;
 }
 function menu(anchor, items) {
-  const html = items.map(it => it === '-' ? '<div class="sep"></div>' : it.header ? `<div class="ph">${esc(it.header)}</div>` : `<button class="mi ${it.danger ? 'danger' : ''} ${it.on ? 'on' : ''}" data-action="mi" data-i="${items.indexOf(it)}">${it.dot ? `<span class="sb-dot" style="background:${attr(it.dot)}"></span>` : ''}${it.icon ? `<span>${it.icon}</span>` : ''}<span>${esc(it.label)}</span>${it.kbd ? `<small>${it.kbd}</small>` : ''}</button>`).join('');
+  const html = items.map(it => it === '-' ? '<div class="sep"></div>' : it.header ? `<div class="ph">${esc(it.header)}</div>` : `<button class="mi ${it.danger ? 'danger' : ''} ${it.on ? 'on' : ''}" data-action="mi" data-i="${items.indexOf(it)}">${it.seal ? sealHtml(it.seal, 'sm') : ''}${it.icon ? `<span class="ico">${LI[it.icon] ? li(it.icon) : it.icon}</span>` : ''}<span>${esc(it.label)}</span>${it.kbd ? `<small>${it.kbd}</small>` : ''}</button>`).join('');
   const pop = showPop(anchor, html);
   pop.addEventListener('click', ev => { const b = ev.target.closest('[data-action="mi"]'); if (!b) return; const it = items[+b.dataset.i]; closePop(); it.run && it.run(); });
 }
@@ -773,17 +833,19 @@ function modal(html, onMount) {
   onMount && onMount($('.modal', root));
   return () => { root.innerHTML = ''; };
 }
-function confirmModal(title, text, okLabel = 'Delete', danger = true) {
+function confirmModal(title, text, okLabel = null, danger = true) {
+  okLabel = okLabel || t('delete');
   return new Promise(res => {
-    const close = modal(`<h3>${esc(title)}</h3><p>${esc(text)}</p><div class="actions"><button class="btn" data-x="0">Cancel</button><button class="btn ${danger ? 'danger' : 'primary'}" data-x="1">${esc(okLabel)}</button></div>`, m => {
+    const close = modal(`<h3>${esc(title)}</h3><p>${esc(text)}</p><div class="actions"><button class="btn" data-x="0">${t('cancel')}</button><button class="btn ${danger ? 'danger' : 'primary'}" data-x="1">${esc(okLabel)}</button></div>`, m => {
       m.addEventListener('click', ev => { const b = ev.target.closest('[data-x]'); if (!b) return; close(); res(b.dataset.x === '1'); });
       $('[data-x="1"]', m).focus();
     });
   });
 }
-function promptModal(title, text, { value = '', placeholder = '', type = 'text', okLabel = 'OK' } = {}) {
+function promptModal(title, text, { value = '', placeholder = '', type = 'text', okLabel = null } = {}) {
+  okLabel = okLabel || t('ok');
   return new Promise(res => {
-    const close = modal(`<h3>${esc(title)}</h3>${text ? `<p>${esc(text)}</p>` : ''}<input type="${type}" value="${attr(value)}" placeholder="${attr(placeholder)}" style="max-width:none"><div class="actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">${esc(okLabel)}</button></div>`, m => {
+    const close = modal(`<h3>${esc(title)}</h3>${text ? `<p>${esc(text)}</p>` : ''}<input type="${type}" value="${attr(value)}" placeholder="${attr(placeholder)}" style="max-width:none"><div class="actions"><button class="btn" data-x="0">${t('cancel')}</button><button class="btn primary" data-x="1">${esc(okLabel)}</button></div>`, m => {
       const inp = $('input', m); inp.focus(); inp.select();
       const done = ok => { const v = inp.value; close(); res(ok ? v : null); };
       m.addEventListener('click', ev => { const b = ev.target.closest('[data-x]'); if (b) done(b.dataset.x === '1'); });
@@ -796,44 +858,44 @@ function promptModal(title, text, { value = '', placeholder = '', type = 'text',
 function dateMenu(anchor) {
   const e = currentEntry(); if (!e) return;
   const v = e.created.slice(0, 16);
-  const pop = showPop(anchor, `<div class="ph">Entry date & time</div><div class="pad"><input type="datetime-local" value="${attr(v)}" id="dt" step="60"></div><button class="mi" data-x="now">🕒 Set to now</button><div class="pad"><button class="btn primary small" data-x="ok" style="width:100%;justify-content:center">Apply</button></div>`);
+  const pop = showPop(anchor, `<div class="ph">${t('entryDateTime')}</div><div class="pad"><input type="datetime-local" value="${attr(v)}" id="dt" step="60"></div><button class="mi" data-x="now"><span class="ico">${li('time')}</span> ${t('setToNow')}</button><div class="pad"><button class="btn primary small" data-x="ok" style="width:100%;justify-content:center">${t('apply')}</button></div>`);
   const apply = () => { const dt = $('#dt', pop).value; if (!dt) return; const d = new Date(dt); if (Number.isNaN(+d)) return; closePop(); patchEntry(e, { created: toIso(d) }); };
   pop.addEventListener('click', ev => { const b = ev.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'now') { closePop(); patchEntry(e, { created: nowIso() }); } else apply(); });
   $('#dt', pop).addEventListener('keydown', ev => { if (ev.key === 'Enter') apply(); });
 }
 function journalMenu(anchor) {
   const e = currentEntry(); if (!e) return;
-  menu(anchor, [{ header: 'Move to journal' }, ...state.data.journals.map(j => ({ label: j.name, dot: j.color, on: j.id === e.journal, run: () => patchEntry(e, { journal: j.id }) }))]);
+  menu(anchor, [{ header: t('moveToJournal') }, ...state.data.journals.map(j => ({ label: j.name, seal: j.id, on: j.id === e.journal, run: () => patchEntry(e, { journal: j.id }) }))]);
 }
 function entryMenu(anchor) {
   const e = currentEntry(); if (!e) return;
   menu(anchor, [
-    { label: state.editing ? 'Done editing' : 'Edit', icon: '✏️', kbd: `${MOD}+E`, run: () => toggleEdit() },
-    { label: e.starred ? 'Remove from favorites' : 'Add to favorites', icon: '★', run: () => patchEntry(e, { starred: !e.starred }) },
-    { label: e.pinned ? 'Unpin' : 'Pin to top', icon: '📌', run: () => patchEntry(e, { pinned: !e.pinned }) },
-    { label: 'Change date…', icon: '📅', run: () => dateMenu(anchor) },
-    { label: 'Move to journal…', icon: '📓', run: () => journalMenu(anchor) },
+    { label: state.editing ? t('doneEditing') : t('edit'), icon: 'copy', kbd: `${MOD}+E`, run: () => toggleEdit() },
+    { label: e.starred ? t('removeFromFavorites') : t('addToFavorites'), icon: 'star', run: () => patchEntry(e, { starred: !e.starred }) },
+    { label: e.pinned ? t('unpin') : t('pinToTop'), icon: 'star', run: () => patchEntry(e, { pinned: !e.pinned }) },
+    { label: t('changeDateEllipsis'), icon: 'calendar', run: () => dateMenu(anchor) },
+    { label: t('moveToJournalEllipsis'), icon: 'all', run: () => journalMenu(anchor) },
     '-',
-    { label: 'Duplicate', icon: '⧉', run: async () => { const c = await api('POST', '/api/entries', { ...e, id: undefined, created: nowIso() }); state.data.entries.unshift(c); go({ e: c.id }); toast('Duplicated'); } },
-    { label: 'Copy as Markdown', icon: '📋', run: () => { navigator.clipboard.writeText(e.text).then(() => toast('Copied')); } },
-    { label: 'Export entry (.md)', icon: '⬇', run: () => downloadText(`${dayOf(e)}-${(titleOf(e) || 'entry').replace(/[^\w一-鿿-]+/g, '_').slice(0, 40)}.md`, `# ${titleOf(e) || 'Entry'}\n\n_${fmtLong(e.created)} ${fmtTime(e.created)}${e.location?.name ? ' · ' + e.location.name : ''}_\n\n${e.text}`) },
-    { label: 'Open file location', icon: '📁', run: () => toast(`${state.data.dataDir}/entries/${e.journal}/${e.created.slice(0, 4)}/`, 5000) },
+    { label: t('duplicate'), icon: 'dup', run: async () => { const c = await api('POST', '/api/entries', { ...e, id: undefined, created: nowIso() }); state.data.entries.unshift(c); go({ e: c.id }); toast(t('duplicated')); } },
+    { label: t('copyMarkdown'), icon: 'copy', run: () => { navigator.clipboard.writeText(e.text).then(() => toast(t('copied'))); } },
+    { label: t('exportEntry'), icon: 'download', run: () => downloadText(`${dayOf(e)}-${(titleOf(e) || 'entry').replace(/[^\w一-鿿-]+/g, '_').slice(0, 40)}.md`, `# ${titleOf(e) || 'Entry'}\n\n_${fmtLong(e.created)} ${fmtTime(e.created)}${e.location?.name ? ' · ' + e.location.name : ''}_\n\n${e.text}`) },
+    { label: t('openFileLocation'), icon: 'folder', run: () => toast(`${state.data.dataDir}/entries/${e.journal}/${e.created.slice(0, 4)}/`, 5000) },
     '-',
-    { label: 'Move to Trash', icon: '🗑', danger: true, kbd: `${MOD}+⌫`, run: () => deleteEntry(e.id) },
+    { label: t('moveToTrash'), icon: 'trash', danger: true, kbd: `${MOD}+⌫`, run: () => deleteEntry(e.id) },
   ]);
 }
 function downloadText(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/markdown' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
 
 function locMenu(anchor) {
   const e = currentEntry(); if (!e) return;
-  const pop = showPop(anchor, `<div class="ph">Location</div><div class="pad"><input type="search" id="loc-q" placeholder="Search a place…" autocomplete="off"></div><div id="loc-res"></div>
-    <button class="mi" data-x="here">${SVG.loc.replace('<svg', '<svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2"')} Use current location</button>
-    ${e.location ? `<button class="mi" data-x="edit">✏️ Edit name…</button><button class="mi danger" data-x="clear">Remove location</button>` : ''}`, { width: 320 });
+  const pop = showPop(anchor, `<div class="ph">${t('location')}</div><div class="pad"><input type="search" id="loc-q" placeholder="${attr(t('searchPlace'))}" autocomplete="off"></div><div id="loc-res"></div>
+    <button class="mi" data-x="here"><span class="ico">${li('loc')}</span> ${t('useCurrentLocation')}</button>
+    ${e.location ? `<button class="mi" data-x="edit"><span class="ico">${li('copy')}</span> ${t('editName')}</button><button class="mi danger" data-x="clear">${t('removeLocation')}</button>` : ''}`, { width: 320 });
   const q = $('#loc-q', pop); q.focus();
   q.addEventListener('input', debounce(async () => {
     const res = $('#loc-res', pop); if (!q.value.trim()) { res.innerHTML = ''; return; }
     res.innerHTML = '<div class="pad"><span class="spin"></span></div>';
-    try { const list = await api('GET', `/api/geo/search?q=${encodeURIComponent(q.value.trim())}`); res.innerHTML = list.length ? list.map((l, i) => `<div class="res" data-r="${i}">${esc(l.name)}<small>${esc(l.address || l.display)}</small></div>`).join('') : '<div class="pad" style="color:var(--fg-3)">No results</div>'; res._list = list; }
+    try { const list = await api('GET', `/api/geo/search?q=${encodeURIComponent(q.value.trim())}`); res.innerHTML = list.length ? list.map((l, i) => `<div class="res" data-r="${i}">${esc(l.name)}<small>${esc(l.address || l.display)}</small></div>`).join('') : `<div class="pad" style="color:var(--ink-3)">${t('noResults')}</div>`; res._list = list; }
     catch (err) { res.innerHTML = `<div class="pad" style="color:var(--danger)">${esc(err.message)}</div>`; }
   }, 350));
   q.addEventListener('keydown', ev => { if (ev.key === 'Enter' && q.value.trim()) { closePop(); setLocation(e, { name: q.value.trim(), address: '' }); } });
@@ -841,15 +903,15 @@ function locMenu(anchor) {
     const r = ev.target.closest('[data-r]'); if (r) { const l = $('#loc-res', pop)._list[+r.dataset.r]; closePop(); return setLocation(e, { name: l.name, address: l.address, lat: l.lat, lon: l.lon }); }
     const b = ev.target.closest('[data-x]'); if (!b) return;
     if (b.dataset.x === 'clear') { closePop(); patchEntry(e, { location: null }); }
-    else if (b.dataset.x === 'edit') { closePop(); const n = await promptModal('Location name', '', { value: e.location.name || '' }); if (n != null) patchEntry(e, { location: { ...e.location, name: n } }); }
+    else if (b.dataset.x === 'edit') { closePop(); const n = await promptModal(t('locationName'), '', { value: e.location.name || '' }); if (n != null) patchEntry(e, { location: { ...e.location, name: n } }); }
     else if (b.dataset.x === 'here') {
-      closePop(); toast('Locating…');
-      if (!navigator.geolocation) return toast('Geolocation unavailable in this browser', 4000);
+      closePop(); toast(t('locating'));
+      if (!navigator.geolocation) return toast(t('geoUnavailable'), 4000);
       navigator.geolocation.getCurrentPosition(async pos => {
         const { latitude: lat, longitude: lon } = pos.coords;
         try { const g = await api('GET', `/api/geo/reverse?lat=${lat}&lon=${lon}`); await setLocation(e, { name: g.name, address: g.address, lat, lon }); }
         catch (_) { await setLocation(e, { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, address: '', lat, lon }); }
-      }, err => toast('Could not get location: ' + err.message + (location.protocol === 'http:' && location.hostname !== 'localhost' ? ' (browsers only allow geolocation on localhost or https)' : ''), 6000), { timeout: 15000 });
+      }, err => toast(t('geoFailed') + ': ' + err.message + (location.protocol === 'http:' && location.hostname !== 'localhost' ? ' ' + t('geoHttpHint') : ''), 6000), { timeout: 15000 });
     }
   });
 }
@@ -858,59 +920,59 @@ async function setLocation(e, loc) {
   if (!e.weather && typeof loc.lat === 'number') fetchWeather(e, true);
 }
 async function fetchWeather(e, quiet = false) {
-  if (!e.location || typeof e.location.lat !== 'number') { if (!quiet) toast('Add a location with coordinates first'); return; }
+  if (!e.location || typeof e.location.lat !== 'number') { if (!quiet) toast(t('addLocationFirst')); return; }
   try {
     const wx = await api('GET', `/api/weather?lat=${e.location.lat}&lon=${e.location.lon}&when=${encodeURIComponent(e.created)}`);
-    if (wx && wx.temp != null) await patchEntry(e, { weather: wx }); else if (!quiet) toast('No weather data for that time');
+    if (wx && wx.temp != null) await patchEntry(e, { weather: wx }); else if (!quiet) toast(t('noWeather'));
   } catch (err) { if (!quiet) toast(err.message, 4000); }
 }
 function wxMenu(anchor) {
   const e = currentEntry(); if (!e) return;
-  menu(anchor, [{ label: 'Refresh weather', icon: '🔄', run: () => fetchWeather(e) }, { label: 'Remove weather', icon: '✕', danger: true, run: () => patchEntry(e, { weather: null }) }]);
+  menu(anchor, [{ label: t('refreshWeather'), icon: 'refresh', run: () => fetchWeather(e) }, { label: t('removeWeather'), icon: 'x', danger: true, run: () => patchEntry(e, { weather: null }) }]);
 }
 function tagAdd(anchor) {
   const e = currentEntry(); if (!e) return;
   const all = tagCounts().map(x => x[0]).filter(t => !e.tags.includes(t));
-  const pop = showPop(anchor, `<div class="ph">Add tag</div><div class="pad"><input type="text" id="tag-q" placeholder="Tag name, Enter to add" autocomplete="off" list="tag-dl"><datalist id="tag-dl">${all.map(t => `<option value="${attr(t)}">`).join('')}</datalist></div><div id="tag-res">${all.slice(0, 12).map(t => `<button class="mi" data-t="${attr(t)}">#${esc(t)}</button>`).join('')}</div>`, { width: 260 });
+  const pop = showPop(anchor, `<div class="ph">${t('addTag')}</div><div class="pad"><input type="text" id="tag-q" placeholder="${attr(t('tagPlaceholder'))}" autocomplete="off" list="tag-dl"><datalist id="tag-dl">${all.map(t => `<option value="${attr(t)}">`).join('')}</datalist></div><div id="tag-res">${all.slice(0, 12).map(t => `<button class="mi" data-t="${attr(t)}">#${esc(t)}</button>`).join('')}</div>`, { width: 260 });
   const q = $('#tag-q', pop); q.focus();
-  const add = t => { t = t.trim().replace(/^#/, ''); if (!t) return; closePop(); patchEntry(e, { tags: [...new Set([...e.tags, t])] }); };
+  const add = tg => { tg = tg.trim().replace(/^#/, ''); if (!tg) return; closePop(); patchEntry(e, { tags: [...new Set([...e.tags, tg])] }); };
   q.addEventListener('keydown', ev => { if (ev.key === 'Enter') add(q.value); });
   q.addEventListener('input', () => { const v = q.value.toLowerCase(); $('#tag-res', pop).innerHTML = all.filter(t => t.toLowerCase().includes(v)).slice(0, 12).map(t => `<button class="mi" data-t="${attr(t)}">#${esc(t)}</button>`).join(''); });
   pop.addEventListener('click', ev => { const b = ev.target.closest('[data-t]'); if (b) add(b.dataset.t); });
 }
 function templateMenu(anchor, forNew = false) {
   const ts = state.data.templates;
-  menu(anchor, [{ header: forNew ? 'New entry from template' : 'Insert template' }, ...ts.map(t => ({ label: t.name, icon: t.icon || '📝', run: async () => {
-    if (forNew) { await newEntry({ text: t.body, template: t.name }); return; }
+  menu(anchor, [{ header: forNew ? t('newFromTemplateHeader') : t('insertTemplate') }, ...ts.map(tp => ({ label: tp.name, icon: tp.icon || 'copy', run: async () => {
+    if (forNew) { await newEntry({ text: tp.body, template: tp.name }); return; }
     const ed = $('#editor'); const e = currentEntry(); if (!ed || !e) return;
-    if (!ed.value.trim()) { ed.value = t.body; e.template = t.name; ed.setSelectionRange(ed.value.length, ed.value.length); ed.focus(); ed.dispatchEvent(new Event('input')); }
-    else insertAtCursor(ed, '\n' + t.body);
-  } })), '-', { label: 'Manage templates…', icon: '⚙', run: () => go({ view: 'settings' }) }]);
+    if (!ed.value.trim()) { ed.value = tp.body; e.template = tp.name; ed.setSelectionRange(ed.value.length, ed.value.length); ed.focus(); ed.dispatchEvent(new Event('input')); }
+    else insertAtCursor(ed, '\n' + tp.body);
+  } })), '-', { label: t('manageTemplates'), icon: 'settings', run: () => go({ view: 'settings' }) }]);
 }
 function filterMenu(anchor) {
   const f = state.filters; const years = [...new Set(state.data.entries.map(e => e.created.slice(0, 4)))].sort().reverse();
   menu(anchor, [
-    { header: 'Filter' },
-    { label: 'Favorites only', icon: '★', on: f.starred, run: () => { f.starred = !f.starred; renderListOnly(); } },
-    { label: 'With media only', icon: '🖼', on: f.photos, run: () => { f.photos = !f.photos; renderListOnly(); } },
-    ...(years.length > 1 ? [{ header: 'Year' }, { label: 'All years', on: !f.year, run: () => { f.year = null; renderListOnly(); } }, ...years.map(y => ({ label: y, on: f.year === y, run: () => { f.year = y; renderListOnly(); } }))] : []),
-    '-', { header: 'Sort' },
-    { label: 'Newest first', on: S().sortOrder !== 'oldest', run: () => setSetting('sortOrder', 'newest') },
-    { label: 'Oldest first', on: S().sortOrder === 'oldest', run: () => setSetting('sortOrder', 'oldest') },
+    { header: t('filter') },
+    { label: t('favoritesOnly'), icon: 'star', on: f.starred, run: () => { f.starred = !f.starred; renderListOnly(); } },
+    { label: t('withMediaOnly'), icon: 'media', on: f.photos, run: () => { f.photos = !f.photos; renderListOnly(); } },
+    ...(years.length > 1 ? [{ header: t('year') }, { label: t('allYears'), on: !f.year, run: () => { f.year = null; renderListOnly(); } }, ...years.map(y => ({ label: y, on: f.year === y, run: () => { f.year = y; renderListOnly(); } }))] : []),
+    '-', { header: t('sort') },
+    { label: t('newestFirst'), on: S().sortOrder !== 'oldest', run: () => setSetting('sortOrder', 'newest') },
+    { label: t('oldestFirst'), on: S().sortOrder === 'oldest', run: () => setSetting('sortOrder', 'oldest') },
   ]);
 }
 function listMenu(anchor) {
   menu(anchor, [
-    { label: 'New entry', icon: '＋', kbd: `${MOD}+N`, run: () => newEntry() },
-    { label: 'New from template…', icon: '📝', run: () => templateMenu(anchor, true) },
-    { label: "Answer today's prompt", icon: '💡', run: () => answerPrompt() },
+    { label: t('newEntry'), icon: 'plus', kbd: `${MOD}+N`, run: () => newEntry() },
+    { label: t('newFromTemplate'), icon: 'copy', run: () => templateMenu(anchor, true) },
+    { label: t('answerTodaysPrompt'), icon: 'prompts', run: () => answerPrompt() },
     '-',
-    { label: 'Rescan data folder', icon: '🔄', run: reloadAll },
-    { label: 'Export everything (.zip)', icon: '⬇', run: () => { location.href = '/api/export.zip'; } },
+    { label: t('rescan'), icon: 'refresh', run: reloadAll },
+    { label: t('exportZip'), icon: 'download', run: () => { location.href = '/api/export.zip'; } },
   ]);
 }
 async function answerPrompt(i) {
-  const ps = state.data.prompts; if (!ps.length) return toast('No prompts configured');
+  const ps = state.data.prompts; if (!ps.length) return toast(t('noPrompts'));
   if (i == null) { const doy = Math.floor((new Date() - new Date(new Date().getFullYear(), 0, 0)) / 86400000); i = doy % ps.length; }
   await newEntry({ text: `**${ps[i]}**\n\n`, prompt: ps[i] });
 }
@@ -922,54 +984,54 @@ function wireSettings() {
 }
 async function saveJournalsFromForm() {
   const rows = $$('#journal-rows .j-row');
-  const js = rows.map(r => ({ id: r.dataset.jid, name: $('[data-jf="name"]', r).value.trim() || 'Journal', color: $('[data-jf="color"]', r).value, description: $('[data-jf="description"]', r).value.trim() }));
-  try { state.data.journals = await api('PUT', '/api/journals', js); toast('Journals saved'); render(); } catch (err) { toast(err.message, 4000); }
+  const js = rows.map(r => ({ id: r.dataset.jid, name: $('[data-jf="name"]', r).value.trim() || t('journal'), color: $('[data-jf="color"]', r).value, seal: $('[data-jf="seal"]', r).value.trim().slice(0, 2), description: $('[data-jf="description"]', r).value.trim() }));
+  try { state.data.journals = await api('PUT', '/api/journals', js); toast(t('journalsSaved')); render(); } catch (err) { toast(err.message, 4000); }
 }
 async function newJournal() {
-  const name = await promptModal('New journal', 'Give it a name. You can pick a colour in Settings.', { placeholder: 'e.g. Travel', okLabel: 'Create' });
+  const name = await promptModal(t('newJournal'), t('newJournalText'), { placeholder: t('journalPlaceholder'), okLabel: t('create') });
   if (!name || !name.trim()) return;
-  const palette = ['#2d7ff9', '#30a46c', '#f76b15', '#8e4ec6', '#e5484d', '#12a594', '#f5b300', '#e93d82', '#ad7f58', '#5b5bd6'];
+  const palette = INK_PALETTE;
   let id = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'journal'; const base = id; let k = 2; while (J(id)) id = `${base}-${k++}`;
-  const js = [...state.data.journals, { id, name: name.trim(), color: palette[state.data.journals.length % palette.length], description: '' }];
-  try { state.data.journals = await api('PUT', '/api/journals', js); go({ view: 'timeline', j: id, e: null, t: null }); render(); toast(`Journal “${name.trim()}” created`); } catch (err) { toast(err.message, 4000); }
+  const js = [...state.data.journals, { id, name: name.trim(), color: palette[state.data.journals.length % palette.length], seal: '', description: '' }];
+  try { state.data.journals = await api('PUT', '/api/journals', js); go({ view: 'timeline', j: id, e: null, t: null }); render(); toast(t('journalCreated', { name: name.trim() })); } catch (err) { toast(err.message, 4000); }
 }
 async function deleteJournal(id) {
   const j = J(id); if (!j) return;
   const n = state.data.entries.filter(e => e.journal === id).length;
   const others = state.data.journals.filter(x => x.id !== id);
-  const close = modal(`<h3>Delete “${esc(j.name)}”?</h3><p>${n ? `It has ${n} entries. Move them to another journal, or send them to the Trash.` : 'It has no entries.'}</p>
-    ${n ? `<select id="mv" style="width:100%;max-width:none">${others.map(o => `<option value="${attr(o.id)}">Move entries to ${esc(o.name)}</option>`).join('')}<option value="__trash">Move entries to Trash</option></select>` : ''}
-    <div class="actions"><button class="btn" data-x="0">Cancel</button><button class="btn danger" data-x="1">Delete journal</button></div>`, m => {
+  const close = modal(`<h3>${esc(t('deleteJournalTitle', { name: j.name }))}</h3><p>${n ? esc(t('deleteJournalHas', { n })) : esc(t('deleteJournalNone'))}</p>
+    ${n ? `<select id="mv" style="width:100%;max-width:none">${others.map(o => `<option value="${attr(o.id)}">${esc(t('moveEntriesTo', { name: o.name }))}</option>`).join('')}<option value="__trash">${esc(t('moveEntriesToTrash'))}</option></select>` : ''}
+    <div class="actions"><button class="btn" data-x="0">${t('cancel')}</button><button class="btn danger" data-x="1">${t('deleteJournal')}</button></div>`, m => {
     m.addEventListener('click', async ev => {
       const b = ev.target.closest('[data-x]'); if (!b) return; const mv = $('#mv', m)?.value; close(); if (b.dataset.x !== '1') return;
       const q = mv === '__trash' ? '?deleteEntries=1' : mv ? `?moveTo=${encodeURIComponent(mv)}` : '';
-      try { state.data.journals = await api('PUT', '/api/journals' + q, others); if (S().defaultJournal === id) await api('PUT', '/api/settings', { defaultJournal: others[0].id }); await reloadAll(false); toast('Journal deleted'); } catch (err) { toast(err.message, 4000); }
+      try { state.data.journals = await api('PUT', '/api/journals' + q, others); if (S().defaultJournal === id) await api('PUT', '/api/settings', { defaultJournal: others[0].id }); await reloadAll(false); toast(t('journalDeleted')); } catch (err) { toast(err.message, 4000); }
     });
   });
 }
 async function saveTemplatesFromForm() {
   const rows = $$('#template-rows .t-row');
-  const ts = rows.map((r, i) => ({ id: state.data.templates[i]?.id || uid(), icon: $('[data-tf="icon"]', r).value.trim(), name: $('[data-tf="name"]', r).value.trim() || 'Template', body: $('[data-tf="body"]', r).value }));
-  try { state.data.templates = await api('PUT', '/api/templates', ts); toast('Templates saved'); render(); } catch (err) { toast(err.message, 4000); }
+  const ts = rows.map((r, i) => ({ id: state.data.templates[i]?.id || uid(), icon: $('[data-tf="icon"]', r).value.trim(), name: $('[data-tf="name"]', r).value.trim() || t('template'), body: $('[data-tf="body"]', r).value }));
+  try { state.data.templates = await api('PUT', '/api/templates', ts); toast(t('templatesSaved')); render(); } catch (err) { toast(err.message, 4000); }
 }
 async function savePromptsFromForm() {
   const ps = $('#prompts-text').value.split('\n').map(s => s.trim()).filter(Boolean);
-  try { state.data.prompts = await api('PUT', '/api/prompts', ps); toast('Prompts saved'); } catch (err) { toast(err.message, 4000); }
+  try { state.data.prompts = await api('PUT', '/api/prompts', ps); toast(t('promptsSaved')); } catch (err) { toast(err.message, 4000); }
 }
 async function setPasscode() {
-  const a = await promptModal('Set passcode', 'Choose a passcode. It only guards this page; files on disk stay readable.', { type: 'password', okLabel: 'Next' }); if (!a) return;
-  const b = await promptModal('Confirm passcode', '', { type: 'password', okLabel: 'Save' }); if (b == null) return;
-  if (a !== b) return toast('Passcodes did not match');
-  await setSetting('passcodeHash', sha256(a)); toast('Passcode set');
+  const a = await promptModal(t('setPasscodeTitle'), t('setPasscodeText'), { type: 'password', okLabel: t('next') }); if (!a) return;
+  const b = await promptModal(t('confirmPasscode'), '', { type: 'password', okLabel: t('save') }); if (b == null) return;
+  if (a !== b) return toast(t('passcodeMismatch'));
+  await setSetting('passcodeHash', sha256(a)); toast(t('passcodeSet'));
 }
 async function importFile(kind, file) {
-  toast(`Importing ${file.name}…`, 3000);
+  toast(t('importing', { name: file.name }), 3000);
   try {
     const r = await fetch(`/api/import/${kind}?name=${encodeURIComponent(file.name.replace(/\.[^.]+$/, ''))}`, { method: 'POST', body: file });
     const data = await r.json(); if (!r.ok) throw new Error(data.error);
     await reloadAll(false);
-    toast(kind === 'dayone' ? `Imported ${data.entries} entries, ${data.media} media, ${data.journals} new journals${data.skipped ? ` (${data.skipped} skipped as duplicates)` : ''}` : `Imported ${data.entries} entries`, 6000);
-  } catch (err) { toast('Import failed: ' + err.message, 6000); }
+    toast(kind === 'dayone' ? t('importedDayOne', { entries: data.entries, media: data.media, journals: data.journals }) + (data.skipped ? ' ' + t('skippedDup', { n: data.skipped }) : '') : t('importedEntries', { n: data.entries }), 6000);
+  } catch (err) { toast(t('importFailed') + ': ' + err.message, 6000); }
 }
 async function reloadAll(rescan = true) {
   if (rescan) await api('POST', '/api/reload');
@@ -992,9 +1054,9 @@ function lock() {
   if (!S().passcodeHash || state.locked) return;
   state.locked = true;
   const lk = $('#lock'); lk.hidden = false;
-  lk.innerHTML = `<div class="lk"><div class="ico">🔒</div><h3>htmldiary is locked</h3><input type="password" id="pc" placeholder="••••" autofocus><div class="err" id="pc-err"></div></div>`;
+  lk.innerHTML = `<div class="lk"><div class="ico">锁</div><h3>${t('locked')}</h3><input type="password" id="pc" placeholder="••••" autofocus><div class="err" id="pc-err"></div></div>`;
   const inp = $('#pc', lk); inp.focus();
-  inp.addEventListener('keydown', ev => { if (ev.key !== 'Enter') return; if (sha256(inp.value) === S().passcodeHash) { lk.hidden = true; lk.innerHTML = ''; state.locked = false; state.lastActivity = Date.now(); } else { $('#pc-err').textContent = 'Wrong passcode'; inp.value = ''; } });
+  inp.addEventListener('keydown', ev => { if (ev.key !== 'Enter') return; if (sha256(inp.value) === S().passcodeHash) { lk.hidden = true; lk.innerHTML = ''; state.locked = false; state.lastActivity = Date.now(); } else { $('#pc-err').textContent = t('wrongPasscode'); inp.value = ''; } });
 }
 setInterval(() => { const m = +S?.()?.autoLockMinutes || 0; if (m && !state.locked && Date.now() - state.lastActivity > m * 60000) lock(); }, 15000);
 ['mousemove', 'keydown', 'click', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { state.lastActivity = Date.now(); }, { passive: true }));
@@ -1007,8 +1069,8 @@ setInterval(() => {
   if (hm === s.reminderTime && lastReminder !== t) {
     lastReminder = t;
     if (state.data.entries.some(e => dayOf(e) === t)) return;
-    if ('Notification' in window && Notification.permission === 'granted') { const nn = new Notification('htmldiary', { body: 'Time to write today’s entry ✍️' }); nn.onclick = () => { window.focus(); newEntry(); }; }
-    else toast('Time to write today’s entry ✍️', 8000);
+    if ('Notification' in window && Notification.permission === 'granted') { const nn = new Notification('htmldiary', { body: t('reminderBody') }); nn.onclick = () => { window.focus(); newEntry(); }; }
+    else toast(t('reminderBody'), 8000);
   }
 }, 20000);
 setInterval(async () => {
@@ -1048,30 +1110,32 @@ const actions = {
   'pop-close'() { closePop(); },
   'modal-close-bg'(el, ev) { if (ev.target === el) $('#modal-root').innerHTML = ''; },
   'trash-restore': async el => { const e = await api('POST', `/api/trash/${el.dataset.id}/restore`); state.data.trash = state.data.trash.filter(x => x.id !== el.dataset.id); state.data.entries.unshift(e); state.data.entries.sort((a, b) => b.created.localeCompare(a.created)); toast('Restored'); go({ e: null }); render(); },
-  'trash-purge': async el => { if (!await confirmModal('Delete forever?', 'This entry will be permanently removed from disk.')) return; await api('DELETE', `/api/trash/${el.dataset.id}`); state.data.trash = state.data.trash.filter(x => x.id !== el.dataset.id); go({ e: null }); render(); },
-  'trash-empty': async () => { if (!state.data.trash.length) return; if (!await confirmModal('Empty Trash?', `${state.data.trash.length} entries will be permanently removed.`, 'Empty Trash')) return; await api('DELETE', '/api/trash'); state.data.trash = []; go({ e: null }); render(); },
+  'trash-purge': async el => { if (!await confirmModal(t('deleteForeverTitle'), t('deleteForeverText'))) return; await api('DELETE', `/api/trash/${el.dataset.id}`); state.data.trash = state.data.trash.filter(x => x.id !== el.dataset.id); go({ e: null }); render(); },
+  'trash-empty': async () => { if (!state.data.trash.length) return; if (!await confirmModal(t('emptyTrashTitle'), t('emptyTrashText', { n: state.data.trash.length }), t('emptyTrash'))) return; await api('DELETE', '/api/trash'); state.data.trash = []; go({ e: null }); render(); },
   set(el) { let v = el.dataset.v; if (el.dataset.bool) v = !!v; else if (/^\d+$/.test(v)) v = +v; setSetting(el.dataset.k, v); },
   'journal-new'() { newJournal(); }, 'journal-delete'(el) { deleteJournal(el.dataset.id); }, 'journals-save'() { saveJournalsFromForm(); },
-  'template-new'() { state.data.templates.push({ id: uid(), name: 'New template', icon: '📝', body: '# Title\n\n' }); render(); window.scrollTo(0, 0); $('#template-rows .t-row:last-child input[data-tf="name"]')?.focus(); },
+  'template-new'() { state.data.templates.push({ id: uid(), name: t('newTemplate'), icon: '📝', body: t('titlePlaceholder') + '\n\n' }); render(); window.scrollTo(0, 0); $('#template-rows .t-row:last-child input[data-tf="name"]')?.focus(); },
   'template-delete'(el) { state.data.templates.splice(+el.dataset.i, 1); render(); },
   'templates-save'() { saveTemplatesFromForm(); }, 'prompts-save'() { savePromptsFromForm(); },
   'prompt-answer'(el) { answerPrompt(+el.dataset.i); },
-  'passcode-set'() { setPasscode(); }, 'passcode-clear'() { setSetting('passcodeHash', ''); toast('Passcode removed'); },
+  'passcode-set'() { setPasscode(); }, 'passcode-clear'() { setSetting('passcodeHash', ''); toast(t('passcodeRemoved')); },
+  'load-templates': async () => { const c = LOCAL_CONTENT[LANG]; if (!c) return; if (!await confirmModal(t('loadBuiltinTemplates'), t('replaceListConfirm', { what: t('templates'), lang: langName() }), t('replace'), false)) return; state.data.templates = await api('PUT', '/api/templates', c.templates.map(x => ({ ...x }))); toast(t('templatesSaved')); render(); },
+  'load-prompts': async () => { const c = LOCAL_CONTENT[LANG]; if (!c) return; if (!await confirmModal(t('loadBuiltinPrompts'), t('replaceListConfirm', { what: t('prompts'), lang: langName() }), t('replace'), false)) return; state.data.prompts = await api('PUT', '/api/prompts', c.prompts.slice()); toast(t('promptsSaved')); render(); },
   'import-dayone'() { $('#file-import-dayone').click(); }, 'import-htmldiary'() { $('#file-import-htmldiary').click(); },
-  reload() { reloadAll().then(() => toast('Rescanned')); },
-  help() { modal(`<h3>Keyboard shortcuts</h3><div class="sc">
-    <span>New entry</span><span><span class="kbd">${MOD}</span> <span class="kbd">N</span></span>
-    <span>Edit / Done</span><span><span class="kbd">${MOD}</span> <span class="kbd">E</span></span>
-    <span>Search</span><span><span class="kbd">${MOD}</span> <span class="kbd">F</span> or <span class="kbd">/</span></span>
-    <span>Save now</span><span><span class="kbd">${MOD}</span> <span class="kbd">S</span></span>
-    <span>Bold / Italic (in editor)</span><span><span class="kbd">${MOD}</span> <span class="kbd">B</span> / <span class="kbd">I</span></span>
-    <span>Next / previous entry</span><span><span class="kbd">J</span> / <span class="kbd">K</span></span>
-    <span>Favorite</span><span><span class="kbd">S</span></span>
-    <span>Move to Trash</span><span><span class="kbd">${MOD}</span> <span class="kbd">⌫</span></span>
-    <span>Leave editor / close</span><span><span class="kbd">Esc</span></span>
-    <span>Views</span><span><span class="kbd">1</span>–<span class="kbd">6</span> timeline · calendar · media · map · on this day · stats</span>
-    <span>This help</span><span><span class="kbd">?</span></span></div>
-    <div class="actions"><button class="btn primary" data-action="modal-close">Close</button></div>`); },
+  reload() { reloadAll().then(() => toast(t('rescanned'))); },
+  help() { const K = k => `<span class="kbd">${k}</span>`; modal(`<h3>${t('keyboardShortcuts')}</h3><div class="sc">
+    <span>${t('scNewEntry')}</span><span>${K(MOD)} ${K('N')}</span>
+    <span>${t('scEdit')}</span><span>${K(MOD)} ${K('E')}</span>
+    <span>${t('scSearch')}</span><span>${K(MOD)} ${K('F')} ${t('or')} ${K('/')}</span>
+    <span>${t('scSave')}</span><span>${K(MOD)} ${K('S')}</span>
+    <span>${t('scBoldItalic')}</span><span>${K(MOD)} ${K('B')} / ${K('I')}</span>
+    <span>${t('scNav')}</span><span>${K('J')} / ${K('K')}</span>
+    <span>${t('scFavorite')}</span><span>${K('S')}</span>
+    <span>${t('scTrash')}</span><span>${K(MOD)} ${K('⌫')}</span>
+    <span>${t('scEscape')}</span><span>${K('Esc')}</span>
+    <span>${t('scViews')}</span><span>${K('1')}–${K('6')} ${t('scViewsList')}</span>
+    <span>${t('scHelp')}</span><span>${K('?')}</span></div>
+    <div class="actions"><button class="btn primary" data-action="modal-close">${t('close')}</button></div>`); },
   'modal-close'() { $('#modal-root').innerHTML = ''; },
 };
 document.addEventListener('click', ev => {
@@ -1094,7 +1158,7 @@ document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') { if ($('#popover-root').innerHTML) return closePop(); if ($('#modal-root').innerHTML) return $('#modal-root').innerHTML = ''; if (state.editing && !typing) return toggleEdit(false); if (!typing && state.route.e) return go({ e: null }); }
   if (mod && ev.key.toLowerCase() === 'n') { ev.preventDefault(); return newEntry(); }
   if (mod && ev.key.toLowerCase() === 'e' && currentEntry()) { ev.preventDefault(); return toggleEdit(); }
-  if (mod && ev.key.toLowerCase() === 's') { ev.preventDefault(); flushSaves().then(() => toast('Saved')); return; }
+  if (mod && ev.key.toLowerCase() === 's') { ev.preventDefault(); flushSaves().then(() => toast(t('savedToast'))); return; }
   if ((mod && ev.key.toLowerCase() === 'f') || (!typing && ev.key === '/')) { ev.preventDefault(); const s = $('#search'); if (s) { s.focus(); s.select(); } else go({ view: 'timeline' }); return; }
   if (mod && ev.key === 'Backspace' && currentEntry() && !state.editing) { ev.preventDefault(); return deleteEntry(state.route.e); }
   if (typing) return;

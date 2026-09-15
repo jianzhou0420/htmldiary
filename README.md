@@ -1,7 +1,8 @@
 # htmldiary
 
-A local, file-first journal in the spirit of **Day One**, as a plain website you run on your own machine.
-Sister project of [htmlkb](https://github.com/jianzhou0420/htmlkb): same zero-dependency bet, applied to a diary.
+A private, file-first journal as a plain website you run on your own machine, with an ink-wash look:
+paper, ink, and one stroke of cinnabar. Sister project of [htmlkb](https://github.com/jianzhou0420/htmlkb):
+same zero-dependency bet, applied to a diary.
 Zero dependencies: Python 3.8+ standard library on the server, vanilla JS in the browser
 (bundled: [marked](https://github.com/markedjs/marked) for Markdown, [Leaflet](https://leafletjs.com) for the map).
 
@@ -12,12 +13,12 @@ HOST=0.0.0.0 ./run.sh   # reachable on the LAN (no auth — use the passcode + a
 HTMLDIARY_DATA=~/journal ./run.sh   # keep the data folder elsewhere
 ```
 
-## What it does (Day One feature map)
+## What it does
 
-| Day One | htmldiary |
+| Feature | htmldiary |
 |---|---|
-| Multiple journals with colours | Sidebar journals, colour per journal, default journal, move entries between journals |
-| Timeline | Month-grouped timeline with day column, title / excerpt / thumbnail / meta line, pinned entries on top |
+| Multiple journals | Sidebar journals, each with a colour and a one- or two-character seal that marks its entries; default journal; move entries between journals |
+| Timeline | Month running heads and a date line per day, title / excerpt / thumbnail / meta line, pinned entries on top; dates in English or Chinese numerals |
 | Calendar view | Month grid with journal dots or photo thumbnails, click a day to see or write entries |
 | Media view | Grid of every photo / video grouped by month |
 | Map view | Leaflet + OpenStreetMap, one marker per geotagged entry |
@@ -33,9 +34,10 @@ HTMLDIARY_DATA=~/journal ./run.sh   # keep the data folder elsewhere
 | Trash | Soft delete with restore / delete forever / empty |
 | Passcode lock | Passcode (hashed) on load + auto-lock after idle time |
 | Reminders | Daily "time to write" browser notification while a tab is open |
-| Dark mode | System / light / dark, sans / serif / mono entry font, font size |
+| Appearance | Paper (light) / night ink (dark) / system; serif, sans or mono entry font; font size |
+| Languages | 16 interface languages (English, 简体中文, 繁體中文, 日本語, 한국어, Tiếng Việt, Español, Français, Deutsch, Português, Русский, Italiano, Bahasa Indonesia, ไทย, Türkçe, العربية with RTL); dates and numbers follow the language; Chinese numerals option for zh / ja; built-in templates and prompts in en / zh / ja / ko / vi |
 | Export | Zip of Markdown + media + JSON snapshot; single-entry `.md` |
-| Import | **Day One JSON export** (zip with photos), htmldiary backups |
+| Import | JSON exports from the Day One app (zip with photos), htmldiary backups |
 | Keyboard | ⌘N new, ⌘E edit, ⌘F search, ⌘S save, J/K move, S star, ⌘⌫ trash, 1–6 views, ? help |
 
 ## Where your writing lives
@@ -81,7 +83,7 @@ automatic — move the folder too.
 
 ## Importing from Day One
 
-Day One → Settings → Export → **JSON** (one zip per journal, or all journals). In htmldiary:
+In the Day One app: Settings → Export → **JSON** (one zip per journal, or all journals). In htmldiary:
 Settings → Data → *Import from Day One* and pick the zip. Journals, photos / videos, tags,
 stars, pins, locations, weather and the original timestamps are kept. Entries are
 converted to wall-clock time in the entry's own time zone when Python ≥ 3.9 is used

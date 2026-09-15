@@ -43,13 +43,13 @@ VERBOSE = False
 # Defaults written on first run (then editable as JSON files in the data dir)
 # --------------------------------------------------------------------------------------
 DEFAULT_JOURNALS = [
-    {"id": "journal", "name": "Journal", "color": "#2d7ff9", "description": "Everyday life."},
+    {"id": "journal", "name": "Journal", "color": "#b8402f", "seal": "记", "description": "Everyday life."},
 ]
 
 DEFAULT_SETTINGS = {
     "theme": "system",            # system | light | dark
     "defaultJournal": "journal",
-    "contentFont": "sans",        # sans | serif | mono
+    "contentFont": "serif",       # serif | sans | mono
     "fontSize": 17,
     "passcodeHash": "",           # sha256 hex, empty = no lock
     "autoLockMinutes": 0,
@@ -59,7 +59,8 @@ DEFAULT_SETTINGS = {
     "firstDayOfWeek": 1,          # 0 = Sunday, 1 = Monday
     "showWordCount": True,
     "temperatureUnit": "C",       # C | F
-    "dateFormat": "long",
+    "uiLanguage": "",             # "" = follow the browser; otherwise a code from web/i18n.js LANGS
+    "dateNumerals": "arabic",     # arabic | cjk  (cjk = 二〇二六年九月十五日, only for zh / ja)
 }
 
 DEFAULT_TEMPLATES = [
@@ -713,7 +714,7 @@ class Store:
         journals = self.journals()
         by_name = {j["name"].lower(): j for j in journals}
         counts = {"entries": 0, "journals": 0, "media": 0, "skipped": 0}
-        palette = ["#2d7ff9", "#30a46c", "#f76b15", "#8e4ec6", "#e5484d", "#12a594", "#f5b300", "#e93d82"]
+        palette = ["#b8402f", "#2f4f6f", "#4f6b3a", "#9a6b2f", "#6b3a5b", "#3a6b6b", "#6b4a3a", "#2b2b2b"]
         for n in names:
             if not n.lower().endswith(".json") or "/" in n.strip("/").rstrip("/")[:-5] and n.count("/") > 1:
                 continue
@@ -731,7 +732,7 @@ class Store:
                 while any(x["id"] == jid for x in journals):
                     jid = "%s-%d" % (base, k)
                     k += 1
-                j = {"id": jid, "name": jname, "color": palette[len(journals) % len(palette)], "description": "Imported from Day One"}
+                j = {"id": jid, "name": jname, "color": palette[len(journals) % len(palette)], "seal": "", "description": "Imported from Day One"}
                 journals.append(j)
                 by_name[jname.lower()] = j
                 counts["journals"] += 1
