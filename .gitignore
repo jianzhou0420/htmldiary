@@ -1,0 +1,4 @@
+# Your journal lives in data/ — keep it out of the code repo (or version it in its own repo).
+data/
+*.pyc
+__pycache__/

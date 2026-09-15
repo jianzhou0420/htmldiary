@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>htmldiary</title>
+<link rel="icon" href="favicon.svg">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="app">
+  <div class="boot">Loading your journal…</div>
+</div>
+<div id="popover-root"></div>
+<div id="modal-root"></div>
+<div id="lightbox" hidden></div>
+<div id="lock" hidden></div>
+<div id="toast"></div>
+<input type="file" id="file-photo" accept="image/*,video/*,audio/*,.pdf" multiple hidden>
+<input type="file" id="file-import-dayone" accept=".zip,.json" hidden>
+<input type="file" id="file-import-htmldiary" accept=".zip,.json" hidden>
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
